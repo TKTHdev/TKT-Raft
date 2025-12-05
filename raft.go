@@ -1,7 +1,9 @@
 package main
 
 import (
+	"github.com/urfave/cli/v2"
 	"net/rpc"
+	"os"
 )
 
 const (
@@ -47,5 +49,36 @@ func NewRaft(id string, peers []string) *Raft {
 }
 
 func main() {
-
+	app := &cli.App{
+		Name:  "raft",
+		Usage: "A simple Raft implementation",
+		Commands: []*cli.Command{
+			{
+				Name:  "start",
+				Usage: "Start the Raft node",
+				Action: func(c *cli.Context) error {
+					for {
+					}
+					return nil
+				},
+			},
+		},
+		Flags: []cli.Flag{
+			&cli.IntFlag{
+				Name:  "id",
+				Usage: "Node ID",
+			},
+			&cli.IntFlag{
+				Name:  "port",
+				Usage: "Port number",
+			},
+			&cli.StringFlag{
+				Name:  "config",
+				Usage: "Path to config file",
+			},
+		},
+	}
+	if err := app.Run(os.Args); err != nil {
+		panic(err)
+	}
 }
