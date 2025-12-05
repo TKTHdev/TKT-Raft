@@ -32,12 +32,12 @@ func main() {
 	// コマンドライン引数のパース
 	deployCmd := flag.NewFlagSet("deploy", flag.ExitOnError)
 	buildCmd := flag.NewFlagSet("build", flag.ExitOnError)
+	sendBinCmd := flag.NewFlagSet("send-bin", flag.ExitOnError) // ★追加
 	startCmd := flag.NewFlagSet("start", flag.ExitOnError)
-	killCmd := flag.NewFlagSet("kill", flag.ExitOnError) // ★追加: killコマンド用
+	killCmd := flag.NewFlagSet("kill", flag.ExitOnError)
 
 	if len(os.Args) < 2 {
-		// ★利用方法の表示を更新
-		fmt.Println("Usage: go run ops_tool.go [deploy|build|start|kill]")
+		fmt.Println("Usage: go run ops_tool.go [deploy|build|send-bin|start|kill]") // ★更新
 		os.Exit(1)
 	}
 
@@ -50,14 +50,24 @@ func main() {
 	case "build":
 		buildCmd.Parse(os.Args[2:])
 		runParallel(nodes, buildProject)
+	case "send-bin": // ★追加: バイナリ配布フロー
+		sendBinCmd.Parse(os.Args[2:])
+		// 1. まずローカルで一回だけビルドする
+		if err := buildLocal(); err != nil {
+			log.Fatalf("Local build failed: %v", err)
+		}
+		// 2. ビルドしたバイナリを並列で配布する
+		runParallel(nodes, distributeBinary)
+		// 3. (任意) ローカルのバイナリを掃除したい場合はここで削除
+		// os.Remove(BinaryName)
 	case "start":
 		startCmd.Parse(os.Args[2:])
 		runParallel(nodes, startRaft)
-	case "kill": // ★追加: killコマンドの処理
+	case "kill":
 		killCmd.Parse(os.Args[2:])
 		runParallel(nodes, killRaftProcess)
 	default:
-		fmt.Println("Unknown command. Use: deploy, build, start, kill") // ★メッセージを更新
+		fmt.Println("Unknown command. Use: deploy, build, send-bin, start, kill")
 		os.Exit(1)
 	}
 }
@@ -89,11 +99,56 @@ func runParallel(nodes []Node, job func(Node)) {
 	fmt.Println("All tasks completed.")
 }
 
+// ---------------------------------------------------------
+//  タスク関数群
+// ---------------------------------------------------------
+
+// ★追加: ローカルでのクロスコンパイル
+func buildLocal() error {
+	fmt.Println("[Local] Building binary for Linux/amd64...")
+
+	// ビルド対象のパス（ops_tool.goがcmd/tools等にある場合、親ディレクトリやmainパッケージのパスを指定）
+	// ここでは例として "../" (親ディレクトリ) にmain.goがあると仮定しています。
+	// 必要に応じて "." や "../cmd/server" などに変更してください。
+	targetPath := ".."
+
+	cmd := exec.Command("go", "build", "-o", BinaryName, targetPath)
+
+	// クロスコンパイル環境変数の設定 (Linux向けにビルド)
+	cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH=amd64")
+
+	if out, err := cmd.CombinedOutput(); err != nil {
+		fmt.Printf("[Local] Build Error: %s\n", string(out))
+		return err
+	}
+	fmt.Println("[Local] Build successful.")
+	return nil
+}
+
+// ★追加: バイナリの配布 (SCP)
+func distributeBinary(node Node) {
+	fmt.Printf("[%s] Sending binary...\n", node.IP)
+
+	// ローカルにある BinaryName を リモートの ProjectDir にコピー
+	// scp raft_server user@ip:~/study/raft/raft_server
+	localBinPath := fmt.Sprintf("./%s", BinaryName)
+	remoteDest := filepath.Join(ProjectDir, BinaryName)
+
+	cmd := exec.Command("scp", localBinPath, fmt.Sprintf("%s@%s:%s", User, node.IP, remoteDest))
+
+	if out, err := cmd.CombinedOutput(); err != nil {
+		fmt.Printf("[%s] SCP Error: %v\nOutput: %s\n", node.IP, err, string(out))
+	} else {
+		// 実行権限を念のため付与 (ssh経由)
+		chmodCmd := exec.Command("ssh", fmt.Sprintf("%s@%s", User, node.IP), "chmod +x "+remoteDest)
+		chmodCmd.Run()
+		fmt.Printf("[%s] Binary sent and chmod +x applied.\n", node.IP)
+	}
+}
+
 // 1. 設定ファイルの配布 (SCP)
 func distributeConfig(node Node) {
 	fmt.Printf("[%s] Distributing config...\n", node.IP)
-
-	// scp cluster.conf user@ip:~/path/cluster.conf
 	remotePath := filepath.Join(ProjectDir, ConfigFile)
 	cmd := exec.Command("scp", ConfigFile, fmt.Sprintf("%s@%s:%s", User, node.IP, remotePath))
 
@@ -104,33 +159,25 @@ func distributeConfig(node Node) {
 	}
 }
 
-// 2. リモートでのビルド (SSH)
+// 2. リモートでのビルド (SSH) - ※ send-bin を使うならあまり使わなくなるかも
 func buildProject(node Node) {
-	fmt.Printf("[%s] Building project...\n", node.IP)
-
-	// ssh user@ip "cd ~/path && go build -o raft_server"
-	// 依存関係解決のため go mod tidy も念のため実行
+	fmt.Printf("[%s] Building project remotely...\n", node.IP)
 	buildCmd := fmt.Sprintf("cd %s && go mod tidy && go build -o %s", ProjectDir, BinaryName)
 	cmd := exec.Command("ssh", fmt.Sprintf("%s@%s", User, node.IP), buildCmd)
 
 	if out, err := cmd.CombinedOutput(); err != nil {
 		fmt.Printf("[%s] Build Error: %v\nOutput: %s\n", node.IP, err, string(out))
 	} else {
-		fmt.Printf("[%s] Build successful.\n", node.IP)
+		fmt.Printf("[%s] Remote build successful.\n", node.IP)
 	}
 }
 
-// 3. Raftの開始 (SSH + nohup)
+// 3. Raftの開始
 func startRaft(node Node) {
 	fmt.Printf("[%s] Starting Raft Node (Port: %d)...\n", node.IP, node.Port)
-
-	// 既に起動しているプロセスがあればkillし、nohupでバックグラウンド起動
-	// ログは node_ID.log に書き出す
 	logFile := fmt.Sprintf("%s/node_%d.log", LogDir, node.ID)
 
-	// コマンド: pkill (古いプロセス停止) + nohup (新規起動)
-	// 自身のIDとPort、設定ファイルのパスを引数に渡す想定
-	// pkillは`raft_server`の古いインスタンスを停止するために使用される
+	// ディレクトリ移動 -> pkill -> nohup起動
 	startCmd := fmt.Sprintf(
 		"cd %s && pkill %s; nohup ./%s start --id %d --conf %s > %s 2>&1 &",
 		ProjectDir, BinaryName, BinaryName, node.ID, ConfigFile, logFile,
@@ -139,35 +186,26 @@ func startRaft(node Node) {
 	cmd := exec.Command("ssh", fmt.Sprintf("%s@%s", User, node.IP), startCmd)
 
 	if err := cmd.Run(); err != nil {
-		// nohupを使う場合、sshが即切断されるとexit statusが変わることがあるが、ここでは簡易エラーハンドリング
-		fmt.Printf("[%s] Start Command Sent (Check logs manually if needed). Error: %v\n", node.IP, err)
+		fmt.Printf("[%s] Start Command Sent (Check logs manually). Error: %v\n", node.IP, err)
 	} else {
 		fmt.Printf("[%s] Start command executed.\n", node.IP)
 	}
 }
 
-// 4. Raftプロセスを停止 (SSH + pkill) ★追加
+// 4. Raftプロセス停止
 func killRaftProcess(node Node) {
 	fmt.Printf("[%s] Killing %s process...\n", node.IP, BinaryName)
-
-	// ssh user@ip "pkill -9 raft_server"
-	// pkill -9 でプロセスを強制終了する
 	killCmd := fmt.Sprintf("pkill -9 %s", BinaryName)
 	cmd := exec.Command("ssh", fmt.Sprintf("%s@%s", User, node.IP), killCmd)
 
-	// CombinedOutputを実行し、エラーをチェック
 	out, err := cmd.CombinedOutput()
-
 	if err != nil {
-		// pkillは、マッチするプロセスが見つからなかった場合(Exit Code 1)、エラーを返します。
-		// プロセスが停止していることが目的なので、Exit Code 1は成功と見なします。
 		if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 1 {
-			fmt.Printf("[%s] %s process was already stopped or not found (Exit Code 1).\n", node.IP, BinaryName)
-			return // 成功と見なして終了
+			fmt.Printf("[%s] Process already stopped.\n", node.IP)
+			return
 		}
-		// その他のエラー (SSH接続失敗、権限不足など)
 		fmt.Printf("[%s] Kill Error: %v\nOutput: %s\n", node.IP, err, string(out))
 	} else {
-		fmt.Printf("[%s] %s process killed successfully.\n", node.IP, BinaryName)
+		fmt.Printf("[%s] Killed successfully.\n", node.IP)
 	}
 }
