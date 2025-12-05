@@ -1,9 +1,7 @@
 package main
 
 import (
-	"log"
 	"os"
-	"time"
 
 	"github.com/urfave/cli/v2"
 )
@@ -20,10 +18,8 @@ func main() {
 					id := c.Int("id")
 					conf := c.String("conf")
 					r := NewRaft(id, conf)
-					for {
-						time.Sleep(1 * time.Second)
-						log.Println("Node", id, "is running...", r.rpcConns)
-					}
+					r.Run()
+					return nil
 				},
 				Flags: []cli.Flag{
 					&cli.IntFlag{
