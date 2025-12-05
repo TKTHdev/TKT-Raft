@@ -2,8 +2,10 @@ package main
 
 import (
 	"github.com/urfave/cli/v2"
+	"log"
 	"net/rpc"
 	"os"
+	"time"
 )
 
 const (
@@ -58,23 +60,25 @@ func main() {
 				Usage: "Start the Raft node",
 				Action: func(c *cli.Context) error {
 					for {
+						time.Sleep(1 * time.Second)
+						log.Println("I am running Raft node... with ID:", c.Int("id"), "on port:", c.Int("port"), "with config:", c.String("conf"))
 					}
 					return nil
 				},
-			},
-		},
-		Flags: []cli.Flag{
-			&cli.IntFlag{
-				Name:  "id",
-				Usage: "Node ID",
-			},
-			&cli.IntFlag{
-				Name:  "port",
-				Usage: "Port number",
-			},
-			&cli.StringFlag{
-				Name:  "config",
-				Usage: "Path to config file",
+				Flags: []cli.Flag{
+					&cli.IntFlag{
+						Name:  "id",
+						Usage: "Node ID",
+					},
+					&cli.IntFlag{
+						Name:  "port",
+						Usage: "Port number",
+					},
+					&cli.StringFlag{
+						Name:  "conf",
+						Usage: "Path to config file",
+					},
+				},
 			},
 		},
 	}

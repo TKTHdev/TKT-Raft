@@ -21,10 +21,10 @@ type Node struct {
 
 // 定数（環境に合わせて変更してください）
 const (
-	User       = "ubuntu"       // SSHユーザー名
-	ProjectDir = "~/raft"       // リモートのプロジェクトディレクトリ
-	BinaryName = "raft_server"  // 生成されるバイナリ名
-	ConfigFile = "cluster.conf" // 設定ファイル名
+	User       = "tkt"             // SSHユーザー名
+	ProjectDir = "~/study/raft"    // リモートのプロジェクトディレクトリ
+	BinaryName = "raft_server"     // 生成されるバイナリ名
+	ConfigFile = "../cluster.conf" // 設定ファイル名
 )
 
 func main() {
@@ -32,9 +32,11 @@ func main() {
 	deployCmd := flag.NewFlagSet("deploy", flag.ExitOnError)
 	buildCmd := flag.NewFlagSet("build", flag.ExitOnError)
 	startCmd := flag.NewFlagSet("start", flag.ExitOnError)
+	killCmd := flag.NewFlagSet("kill", flag.ExitOnError) // ★追加: killコマンド用
 
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run ops_tool.go [deploy|build|start]")
+		// ★利用方法の表示を更新
+		fmt.Println("Usage: go run ops_tool.go [deploy|build|start|kill]")
 		os.Exit(1)
 	}
 
@@ -50,8 +52,11 @@ func main() {
 	case "start":
 		startCmd.Parse(os.Args[2:])
 		runParallel(nodes, startRaft)
+	case "kill": // ★追加: killコマンドの処理
+		killCmd.Parse(os.Args[2:])
+		runParallel(nodes, killRaftProcess)
 	default:
-		fmt.Println("Unknown command. Use: deploy, build, start")
+		fmt.Println("Unknown command. Use: deploy, build, start, kill") // ★メッセージを更新
 		os.Exit(1)
 	}
 }
@@ -124,8 +129,9 @@ func startRaft(node Node) {
 
 	// コマンド: pkill (古いプロセス停止) + nohup (新規起動)
 	// 自身のIDとPort、設定ファイルのパスを引数に渡す想定
+	// pkillは`raft_server`の古いインスタンスを停止するために使用される
 	startCmd := fmt.Sprintf(
-		"cd %s && pkill %s; nohup ./%s start --id=%d --port=%d --conf=%s > %s 2>&1 &",
+		"cd %s && pkill %s; nohup ./%s start --id %d --port %d --conf %s > %s 2>&1 &",
 		ProjectDir, BinaryName, BinaryName, node.ID, node.Port, ConfigFile, logFile,
 	)
 
@@ -136,5 +142,31 @@ func startRaft(node Node) {
 		fmt.Printf("[%s] Start Command Sent (Check logs manually if needed). Error: %v\n", node.IP, err)
 	} else {
 		fmt.Printf("[%s] Start command executed.\n", node.IP)
+	}
+}
+
+// 4. Raftプロセスを停止 (SSH + pkill) ★追加
+func killRaftProcess(node Node) {
+	fmt.Printf("[%s] Killing %s process...\n", node.IP, BinaryName)
+
+	// ssh user@ip "pkill -9 raft_server"
+	// pkill -9 でプロセスを強制終了する
+	killCmd := fmt.Sprintf("pkill -9 %s", BinaryName)
+	cmd := exec.Command("ssh", fmt.Sprintf("%s@%s", User, node.IP), killCmd)
+
+	// CombinedOutputを実行し、エラーをチェック
+	out, err := cmd.CombinedOutput()
+
+	if err != nil {
+		// pkillは、マッチするプロセスが見つからなかった場合(Exit Code 1)、エラーを返します。
+		// プロセスが停止していることが目的なので、Exit Code 1は成功と見なします。
+		if exitError, ok := err.(*exec.ExitError); ok && exitError.ExitCode() == 1 {
+			fmt.Printf("[%s] %s process was already stopped or not found (Exit Code 1).\n", node.IP, BinaryName)
+			return // 成功と見なして終了
+		}
+		// その他のエラー (SSH接続失敗、権限不足など)
+		fmt.Printf("[%s] Kill Error: %v\nOutput: %s\n", node.IP, err, string(out))
+	} else {
+		fmt.Printf("[%s] %s process killed successfully.\n", node.IP, BinaryName)
 	}
 }
