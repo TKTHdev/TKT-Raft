@@ -5,6 +5,11 @@ const (
 	RequestVote   = "Raft.RequestVote"
 )
 
+const (
+	NOTVOTED = -2
+	NOLEADER = -1
+)
+
 type AppendEntriesArgs struct {
 	Term         int
 	LeaderID     int
@@ -76,7 +81,29 @@ func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply)
 }
 
 func (r *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error {
+	//1. Reply false if term < currentTerm
+	if args.Term < r.currentTerm {
+		reply.Term = r.currentTerm
+		reply.VoteGranted = false
+		return nil
+	} else if args.Term > r.currentTerm {
+		r.votedFor = NOTVOTED
+		r.currentTerm = args.Term
+	}
+
+	//2. If votedFor is null or candidateId, and candidate's log is at least as up-to-date as receiver's log, grant vote
+	lastLogIndex := len(r.log) - 1
+	lastLogTerm := r.log[lastLogIndex].Term
+	upToDate := (args.LastLogTerm > lastLogTerm) || (args.LastLogTerm == lastLogTerm && args.LastLogIndex >= lastLogIndex)
+	if (r.votedFor == NOTVOTED || r.votedFor == args.CandidateID) && upToDate {
+		r.votedFor = args.CandidateID
+		reply.VoteGranted = true
+	} else {
+		reply.VoteGranted = false
+	}
+	reply.Term = r.currentTerm
 	return nil
+
 }
 
 func (r *Raft) sendAppendEntries(server int) bool {
