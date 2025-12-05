@@ -8,9 +8,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (r *Raft) initConns() error {
+func (r *Raft) initConns(peerIPPort map[int]string) error {
 	for {
-		for idx, peerID := range r.peerIPPort {
+		for idx, peerID := range peerIPPort {
 			if idx != r.me && r.rpcConns[idx] == nil {
 				log.Println("Connecting to peer:", peerID)
 				client, err := rpc.Dial("tcp", peerID)
@@ -26,11 +26,11 @@ func (r *Raft) initConns() error {
 	return nil
 }
 
-func (r *Raft) listenRPC() error {
+func (r *Raft) listenRPC(peerIPPort map[int]string) error {
 	if err := rpc.Register(r); err != nil {
 		return errors.WithStack(err)
 	}
-	l, err := net.Listen("tcp", r.peerIPPort[r.me])
+	l, err := net.Listen("tcp", peerIPPort[r.me])
 	if err != nil {
 		return errors.WithStack(err)
 	}

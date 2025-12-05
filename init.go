@@ -19,10 +19,10 @@ func main() {
 				Action: func(c *cli.Context) error {
 					id := c.Int("id")
 					conf := c.String("conf")
-					NewRaft(id, conf)
+					r := NewRaft(id, conf)
 					for {
 						time.Sleep(1 * time.Second)
-						log.Println("Node", id, "is running...")
+						log.Println("Node", id, "is running...", r.rpcConns)
 					}
 				},
 				Flags: []cli.Flag{

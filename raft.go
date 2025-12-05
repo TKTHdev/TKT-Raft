@@ -10,6 +10,7 @@ const (
 
 type LogEntry struct {
 	command interface{}
+	Term    int
 }
 
 type Raft struct {
@@ -24,23 +25,10 @@ type Raft struct {
 	me          int
 	state       int
 	rpcConns    map[int]*rpc.Client
-	peerIPPort  map[int]string
-}
-
-type HogeArgs struct {
-}
-
-type HogeReply struct {
-	Message string
-}
-
-func (r *Raft) HogeRPC(args *HogeArgs, reply *HogeReply) error {
-	reply.Message = "Hello from node " + string(r.me)
-	return nil
 }
 
 func NewRaft(id int, confPath string) *Raft {
-
+	peerIPPort := parseConfig(confPath)
 	r := &Raft{
 		currentTerm: -1,
 		votedFor:    -2,
@@ -52,9 +40,8 @@ func NewRaft(id int, confPath string) *Raft {
 		me:          id,
 		state:       FOLLOWER,
 		rpcConns:    make(map[int]*rpc.Client),
-		peerIPPort:  parseConfig(confPath),
 	}
-	go r.listenRPC()
-	go r.initConns()
+	go r.listenRPC(peerIPPort)
+	go r.initConns(peerIPPort)
 	return r
 }

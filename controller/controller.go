@@ -21,10 +21,11 @@ type Node struct {
 
 // 定数（環境に合わせて変更してください）
 const (
-	User       = "tkt"             // SSHユーザー名
-	ProjectDir = "~/study/raft"    // リモートのプロジェクトディレクトリ
-	BinaryName = "raft_server"     // 生成されるバイナリ名
-	ConfigFile = "../cluster.conf" // 設定ファイル名
+	User       = "tkt"               // SSHユーザー名
+	ProjectDir = "~/study/raft"      // リモートのプロジェクトディレクトリ
+	BinaryName = "raft_server"       // 生成されるバイナリ名
+	ConfigFile = "../cluster.conf"   // 設定ファイル名
+	LogDir     = "~/study/raft/logs" // ログディレクトリ
 )
 
 func main() {
@@ -125,7 +126,7 @@ func startRaft(node Node) {
 
 	// 既に起動しているプロセスがあればkillし、nohupでバックグラウンド起動
 	// ログは node_ID.log に書き出す
-	logFile := fmt.Sprintf("node_%d.log", node.ID)
+	logFile := fmt.Sprintf("%s/node_%d.log", LogDir, node.ID)
 
 	// コマンド: pkill (古いプロセス停止) + nohup (新規起動)
 	// 自身のIDとPort、設定ファイルのパスを引数に渡す想定
