@@ -1,12 +1,6 @@
 package main
 
-import (
-	"github.com/urfave/cli/v2"
-	"log"
-	"net/rpc"
-	"os"
-	"time"
-)
+import "net/rpc"
 
 const (
 	LEADER = iota
@@ -20,7 +14,6 @@ type LogEntry struct {
 
 type Raft struct {
 	//net rpc conn
-	conns       map[string]*rpc.Client
 	currentTerm int
 	votedFor    int
 	log         []LogEntry
@@ -28,61 +21,40 @@ type Raft struct {
 	lastApplied int
 	nextIndex   map[int]int
 	matchIndex  map[int]int
-	id          string
+	me          int
 	state       int
+	rpcConns    map[int]*rpc.Client
+	peerIPPort  map[int]string
 }
 
-func NewRaft(id string, peers []string) *Raft {
+type HogeArgs struct {
+}
+
+type HogeReply struct {
+	Message string
+}
+
+func (r *Raft) HogeRPC(args *HogeArgs, reply *HogeReply) error {
+	reply.Message = "Hello from node " + string(r.me)
+	return nil
+}
+
+func NewRaft(id int, confPath string) *Raft {
+
 	r := &Raft{
-		conns:       make(map[string]*rpc.Client),
-		currentTerm: 0,
-		votedFor:    -1,
+		currentTerm: -1,
+		votedFor:    -2,
 		log:         make([]LogEntry, 0),
-		commitIndex: 0,
-		lastApplied: 0,
+		commitIndex: -1,
+		lastApplied: -1,
 		nextIndex:   make(map[int]int),
 		matchIndex:  make(map[int]int),
-		id:          id,
+		me:          id,
 		state:       FOLLOWER,
+		rpcConns:    make(map[int]*rpc.Client),
+		peerIPPort:  parseConfig(confPath),
 	}
 	go r.listenRPC()
-	go r.initConns(peers)
+	go r.initConns()
 	return r
-}
-
-func main() {
-	app := &cli.App{
-		Name:  "raft",
-		Usage: "A simple Raft implementation",
-		Commands: []*cli.Command{
-			{
-				Name:  "start",
-				Usage: "Start the Raft node",
-				Action: func(c *cli.Context) error {
-					for {
-						time.Sleep(1 * time.Second)
-						log.Println("I am running Raft node... with ID:", c.Int("id"), "on port:", c.Int("port"), "with config:", c.String("conf"))
-					}
-					return nil
-				},
-				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:  "id",
-						Usage: "Node ID",
-					},
-					&cli.IntFlag{
-						Name:  "port",
-						Usage: "Port number",
-					},
-					&cli.StringFlag{
-						Name:  "conf",
-						Usage: "Path to config file",
-					},
-				},
-			},
-		},
-	}
-	if err := app.Run(os.Args); err != nil {
-		panic(err)
-	}
 }

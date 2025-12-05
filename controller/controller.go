@@ -131,8 +131,8 @@ func startRaft(node Node) {
 	// 自身のIDとPort、設定ファイルのパスを引数に渡す想定
 	// pkillは`raft_server`の古いインスタンスを停止するために使用される
 	startCmd := fmt.Sprintf(
-		"cd %s && pkill %s; nohup ./%s start --id %d --port %d --conf %s > %s 2>&1 &",
-		ProjectDir, BinaryName, BinaryName, node.ID, node.Port, ConfigFile, logFile,
+		"cd %s && pkill %s; nohup ./%s start --id %d --conf %s > %s 2>&1 &",
+		ProjectDir, BinaryName, BinaryName, node.ID, ConfigFile, logFile,
 	)
 
 	cmd := exec.Command("ssh", fmt.Sprintf("%s@%s", User, node.IP), startCmd)
