@@ -1,6 +1,9 @@
 package main
 
-import "net/rpc"
+import (
+	"net/rpc"
+	"sync"
+)
 
 const (
 	LEADER = iota
@@ -25,6 +28,9 @@ type Raft struct {
 	me          int
 	state       int
 	rpcConns    map[int]*rpc.Client
+	heartBeatCh chan bool
+	mu          sync.Mutex
+	clusterSize int32
 }
 
 func NewRaft(id int, confPath string) *Raft {
@@ -32,7 +38,7 @@ func NewRaft(id int, confPath string) *Raft {
 	r := &Raft{
 		currentTerm: -1,
 		votedFor:    -2,
-		log:         make([]LogEntry, 0),
+		log:         []LogEntry{{command: nil, Term: -1}},
 		commitIndex: -1,
 		lastApplied: -1,
 		nextIndex:   make(map[int]int),
@@ -40,7 +46,15 @@ func NewRaft(id int, confPath string) *Raft {
 		me:          id,
 		state:       FOLLOWER,
 		rpcConns:    make(map[int]*rpc.Client),
+		heartBeatCh: make(chan bool),
+		mu:          sync.Mutex{},
+		clusterSize: int32(len(peerIPPort)),
 	}
+	for peerID, _ := range peerIPPort {
+		r.nextIndex[peerID] = 1
+		r.matchIndex[peerID] = 0
+	}
+
 	go r.listenRPC(peerIPPort)
 	go r.initConns(peerIPPort)
 	return r

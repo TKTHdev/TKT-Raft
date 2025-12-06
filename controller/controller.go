@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"sync"
 )
 
@@ -24,7 +25,7 @@ const (
 	User       = "tkt"               // SSHユーザー名
 	ProjectDir = "~/study/raft"      // リモートのプロジェクトディレクトリ
 	BinaryName = "raft_server"       // 生成されるバイナリ名
-	ConfigFile = "../cluster.conf"   // 設定ファイル名
+	ConfigFile = "../cluster.conf"   // 設定ファイル名 (controllerから見た相対パス)
 	LogDir     = "~/study/raft/logs" // ログディレクトリ
 )
 
@@ -32,12 +33,12 @@ func main() {
 	// コマンドライン引数のパース
 	deployCmd := flag.NewFlagSet("deploy", flag.ExitOnError)
 	buildCmd := flag.NewFlagSet("build", flag.ExitOnError)
-	sendBinCmd := flag.NewFlagSet("send-bin", flag.ExitOnError) // ★追加
+	sendBinCmd := flag.NewFlagSet("send-bin", flag.ExitOnError)
 	startCmd := flag.NewFlagSet("start", flag.ExitOnError)
 	killCmd := flag.NewFlagSet("kill", flag.ExitOnError)
 
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run ops_tool.go [deploy|build|send-bin|start|kill]") // ★更新
+		fmt.Println("Usage: go run controller.go [deploy|build|send-bin|start|kill]")
 		os.Exit(1)
 	}
 
@@ -50,7 +51,7 @@ func main() {
 	case "build":
 		buildCmd.Parse(os.Args[2:])
 		runParallel(nodes, buildProject)
-	case "send-bin": // ★追加: バイナリ配布フロー
+	case "send-bin":
 		sendBinCmd.Parse(os.Args[2:])
 		// 1. まずローカルで一回だけビルドする
 		if err := buildLocal(); err != nil {
@@ -58,14 +59,43 @@ func main() {
 		}
 		// 2. ビルドしたバイナリを並列で配布する
 		runParallel(nodes, distributeBinary)
-		// 3. (任意) ローカルのバイナリを掃除したい場合はここで削除
-		// os.Remove(BinaryName)
 	case "start":
 		startCmd.Parse(os.Args[2:])
 		runParallel(nodes, startRaft)
 	case "kill":
 		killCmd.Parse(os.Args[2:])
-		runParallel(nodes, killRaftProcess)
+		args := killCmd.Args()
+
+		var targetNodes []Node
+
+		// 引数がない、または "all" の場合は全ノード対象
+		if len(args) == 0 || args[0] == "all" {
+			fmt.Println("Target: ALL nodes")
+			targetNodes = nodes
+		} else {
+			// 特定のID指定とみなして数値変換
+			targetID, err := strconv.Atoi(args[0])
+			if err != nil {
+				log.Fatalf("Invalid argument: '%s'. Use a specific Node ID (e.g., 0) or 'all'.", args[0])
+			}
+
+			// ノードリストから該当IDを探す
+			found := false
+			for _, node := range nodes {
+				if node.ID == targetID {
+					targetNodes = append(targetNodes, node)
+					found = true
+					break
+				}
+			}
+			if !found {
+				log.Fatalf("Node ID %d not found in config.", targetID)
+			}
+			fmt.Printf("Target: Node ID %d only\n", targetID)
+		}
+
+		runParallel(targetNodes, killRaftProcess)
+
 	default:
 		fmt.Println("Unknown command. Use: deploy, build, send-bin, start, kill")
 		os.Exit(1)
@@ -103,18 +133,18 @@ func runParallel(nodes []Node, job func(Node)) {
 //  タスク関数群
 // ---------------------------------------------------------
 
-// ★追加: ローカルでのクロスコンパイル
+// ローカルでのクロスコンパイル
 func buildLocal() error {
 	fmt.Println("[Local] Building binary for Linux/amd64...")
 
-	// ビルド対象のパス（ops_tool.goがcmd/tools等にある場合、親ディレクトリやmainパッケージのパスを指定）
-	// ここでは例として "../" (親ディレクトリ) にmain.goがあると仮定しています。
-	// 必要に応じて "." や "../cmd/server" などに変更してください。
-	targetPath := ".."
+	targetPath := ".." // mainパッケージがある場所（親ディレクトリ）
 
-	cmd := exec.Command("go", "build", "-o", BinaryName, targetPath)
+	// ★修正: 出力先を親ディレクトリの raft_server に指定
+	outputPath := filepath.Join("..", BinaryName)
 
-	// クロスコンパイル環境変数の設定 (Linux向けにビルド)
+	cmd := exec.Command("go", "build", "-o", outputPath, targetPath)
+
+	// クロスコンパイル環境変数の設定
 	cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH=amd64")
 
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -125,13 +155,12 @@ func buildLocal() error {
 	return nil
 }
 
-// ★追加: バイナリの配布 (SCP)
+// バイナリの配布 (SCP)
 func distributeBinary(node Node) {
 	fmt.Printf("[%s] Sending binary...\n", node.IP)
 
-	// ローカルにある BinaryName を リモートの ProjectDir にコピー
-	// scp raft_server user@ip:~/study/raft/raft_server
-	localBinPath := fmt.Sprintf("./%s", BinaryName)
+	// ★修正: 送信元バイナリパスを親ディレクトリのものに指定
+	localBinPath := filepath.Join("..", BinaryName)
 	remoteDest := filepath.Join(ProjectDir, BinaryName)
 
 	cmd := exec.Command("scp", localBinPath, fmt.Sprintf("%s@%s:%s", User, node.IP, remoteDest))
@@ -139,14 +168,14 @@ func distributeBinary(node Node) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		fmt.Printf("[%s] SCP Error: %v\nOutput: %s\n", node.IP, err, string(out))
 	} else {
-		// 実行権限を念のため付与 (ssh経由)
+		// 実行権限を付与
 		chmodCmd := exec.Command("ssh", fmt.Sprintf("%s@%s", User, node.IP), "chmod +x "+remoteDest)
 		chmodCmd.Run()
 		fmt.Printf("[%s] Binary sent and chmod +x applied.\n", node.IP)
 	}
 }
 
-// 1. 設定ファイルの配布 (SCP)
+// 設定ファイルの配布
 func distributeConfig(node Node) {
 	fmt.Printf("[%s] Distributing config...\n", node.IP)
 	remotePath := filepath.Join(ProjectDir, ConfigFile)
@@ -159,7 +188,7 @@ func distributeConfig(node Node) {
 	}
 }
 
-// 2. リモートでのビルド (SSH) - ※ send-bin を使うならあまり使わなくなるかも
+// リモートでのビルド (SSH)
 func buildProject(node Node) {
 	fmt.Printf("[%s] Building project remotely...\n", node.IP)
 	buildCmd := fmt.Sprintf("cd %s && go mod tidy && go build -o %s", ProjectDir, BinaryName)
@@ -172,12 +201,11 @@ func buildProject(node Node) {
 	}
 }
 
-// 3. Raftの開始
+// Raftの開始
 func startRaft(node Node) {
 	fmt.Printf("[%s] Starting Raft Node (Port: %d)...\n", node.IP, node.Port)
 	logFile := fmt.Sprintf("%s/node_%d.log", LogDir, node.ID)
 
-	// ディレクトリ移動 -> pkill -> nohup起動
 	startCmd := fmt.Sprintf(
 		"cd %s && pkill %s; nohup ./%s start --id %d --conf %s > %s 2>&1 &",
 		ProjectDir, BinaryName, BinaryName, node.ID, ConfigFile, logFile,
@@ -192,7 +220,7 @@ func startRaft(node Node) {
 	}
 }
 
-// 4. Raftプロセス停止
+// Raftプロセス停止
 func killRaftProcess(node Node) {
 	fmt.Printf("[%s] Killing %s process...\n", node.IP, BinaryName)
 	killCmd := fmt.Sprintf("pkill -9 %s", BinaryName)

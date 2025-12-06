@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"net"
 	"net/rpc"
 
@@ -11,16 +10,16 @@ import (
 func (r *Raft) initConns(peerIPPort map[int]string) error {
 	for {
 		for idx, peerID := range peerIPPort {
+			r.mu.Lock()
 			if idx != r.me && r.rpcConns[idx] == nil {
-				log.Println("Connecting to peer:", peerID)
 				client, err := rpc.Dial("tcp", peerID)
 				if err != nil {
-					log.Println("Failed to connect to peer:", peerID, "Error:", err)
+					r.mu.Unlock()
 					continue
 				}
 				r.rpcConns[idx] = client
-				log.Println("Connected to peer:", peerID)
 			}
+			r.mu.Unlock()
 		}
 	}
 	return nil
@@ -40,6 +39,5 @@ func (r *Raft) listenRPC(peerIPPort map[int]string) error {
 			return errors.WithStack(err)
 		}
 		go rpc.ServeConn(conn)
-		log.Println("Accepted connection from:", conn.RemoteAddr())
 	}
 }
