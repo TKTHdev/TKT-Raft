@@ -40,7 +40,7 @@ func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	//0. If term > currentTerm, set currentTerm = term, convert to follower
-	if args.Term > r.currentTerm {
+	if r.currentTerm < args.Term {
 		r.currentTerm = args.Term
 		r.state = FOLLOWER
 		r.votedFor = NOTVOTED
@@ -52,7 +52,7 @@ func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply)
 		return nil
 	}
 	//2. Reply false if log doesn't contain an entry at prevLogIndex whose term matches prevLogTerm
-	if args.PrevLogIndex >= len(r.log) || r.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+	if r.log[args.PrevLogIndex].Term != args.PrevLogTerm || len(r.log) <= args.PrevLogIndex {
 		reply.Term = r.currentTerm
 		reply.Success = false
 		return nil
@@ -70,12 +70,12 @@ func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply)
 	//4. Append any new entries not already in the log
 	for i, entry := range args.Entries {
 		logIndex := args.PrevLogIndex + 1 + i
-		if logIndex >= len(r.log) {
+		if len(r.log) <= logIndex {
 			r.log = append(r.log, entry)
 		}
 	}
 	//5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
-	if args.LeaderCommit > r.commitIndex {
+	if r.commitIndex < args.LeaderCommit {
 		lastNewEntryIndex := args.PrevLogIndex + len(args.Entries)
 		if args.LeaderCommit < lastNewEntryIndex {
 			r.commitIndex = args.LeaderCommit
@@ -97,7 +97,7 @@ func (r *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 		reply.Term = r.currentTerm
 		reply.VoteGranted = false
 		return nil
-	} else if args.Term > r.currentTerm {
+	} else if r.currentTerm < args.Term {
 		r.votedFor = NOTVOTED
 		r.currentTerm = args.Term
 	}
@@ -106,7 +106,7 @@ func (r *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 	//2. If votedFor is null or candidateId, and candidate's log is at least as up-to-date as receiver's log, grant vote
 	lastLogIndex := len(r.log) - 1
 	lastLogTerm := r.log[lastLogIndex].Term
-	upToDate := (args.LastLogTerm > lastLogTerm) || (args.LastLogTerm == lastLogTerm && args.LastLogIndex >= lastLogIndex)
+	upToDate := (lastLogTerm < args.LastLogTerm) || (args.LastLogTerm == lastLogTerm && lastLogIndex <= args.LastLogIndex)
 	if (r.votedFor == NOTVOTED || r.votedFor == args.CandidateID) && upToDate {
 		r.votedFor = args.CandidateID
 		reply.VoteGranted = true
@@ -142,7 +142,7 @@ func (r *Raft) sendAppendEntries(server int) bool {
 		r.nextIndex[server] = max(1, r.nextIndex[server]-1)
 	}
 	r.mu.Unlock()
-	if reply.Term > r.currentTerm {
+	if r.currentTerm < reply.Term {
 		r.mu.Lock()
 		r.currentTerm = reply.Term
 		r.state = FOLLOWER
@@ -164,7 +164,7 @@ func (r *Raft) sendRequestVote(server int) bool {
 		//r.rpcConns[server] = nil
 		return false
 	}
-	if reply.Term > r.currentTerm {
+	if r.currentTerm < reply.Term {
 		r.currentTerm = reply.Term
 		r.state = FOLLOWER
 		r.votedFor = NOTVOTED
