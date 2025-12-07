@@ -32,6 +32,7 @@ func (r *Raft) applyCommand(command string) {
 			return
 		}
 		key := parts[1]
+
 		delete(r.StateMachine, key)
 	default:
 		// Unknown command

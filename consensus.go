@@ -16,7 +16,9 @@ const (
 
 func (r *Raft) Run() {
 	for {
-		switch r.state {
+		state := r.state
+
+		switch state {
 		case FOLLOWER:
 			if err := r.doFollower(); err != nil {
 				r.logPut("I am a follower", GREEN)
@@ -47,13 +49,10 @@ func (r *Raft) doFollower() error {
 }
 
 func (r *Raft) doLeader() error {
-	// send heartbeats to all followers
-	r.mu.Lock()
-	ids := make([]int, 0, len(r.rpcConns))
+	ids := make([]int, 0, r.clusterSize)
 	for id := range r.rpcConns {
 		ids = append(ids, id)
 	}
-	r.mu.Unlock()
 	for _, id := range ids {
 		if id != r.me {
 			msg := fmt.Sprintf("Sending heartbeat to node %d", id)
@@ -65,10 +64,8 @@ func (r *Raft) doLeader() error {
 	time.Sleep(COMMUNICATION_LATENCY)
 
 	//if matchIndex updated, try to commit entries
-	r.mu.Lock()
 	r.updateCommitIndex()
 	r.updateStateMachine()
-	r.mu.Unlock()
 	return nil
 }
 
@@ -82,8 +79,6 @@ func (r *Raft) updateCommitIndex() {
 		}
 		if atomic.LoadInt32(&cnt) > r.clusterSize/2 {
 			r.commitIndex = i
-			msg := fmt.Sprintf("Committed log entry at index %d with %d matches", i, cnt)
-			r.logPut(msg, GREEN)
 		}
 	}
 }
@@ -94,20 +89,15 @@ func (r *Raft) updateStateMachine() {
 		entry := r.log[r.lastApplied]
 		//apply to state machine
 		r.StateMachineCh <- entry.Command
-		msg := fmt.Sprintf("Applied log entry at index %d to state machine", r.lastApplied)
-		r.logPut(msg, GREEN)
 	}
 }
 
 func (r *Raft) startElection() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.state = CANDIDATE
 	r.currentTerm++
 	r.votedFor = r.me
 	var cnt int32 = 1 //vote for self already
-	// Send RequestVote RPCs to other nodes (copy keys under lock)
-	ids := make([]int, 0, len(r.rpcConns))
+	ids := make([]int, 0, r.clusterSize)
 	for id := range r.rpcConns {
 		ids = append(ids, id)
 	}

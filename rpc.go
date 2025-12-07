@@ -37,8 +37,6 @@ type RequestVoteReply struct {
 }
 
 func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	//0. If term > currentTerm, set currentTerm = term, convert to follower
 	if r.currentTerm < args.Term {
 		r.currentTerm = args.Term
@@ -91,8 +89,6 @@ func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply)
 }
 
 func (r *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	//1. Reply false if term < currentTerm
 	if args.Term < r.currentTerm {
 		reply.Term = r.currentTerm
@@ -120,9 +116,7 @@ func (r *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 }
 
 func (r *Raft) sendAppendEntries(server int) bool {
-	r.mu.Lock()
 	if r.rpcConns[server] == nil {
-		r.mu.Unlock()
 		return false
 	}
 	args := &AppendEntriesArgs{
@@ -131,28 +125,23 @@ func (r *Raft) sendAppendEntries(server int) bool {
 		PrevLogIndex: r.nextIndex[server] - 1,
 		PrevLogTerm:  r.log[r.nextIndex[server]-1].Term,
 		Entries:      r.log[r.nextIndex[server]:],
-		LeaderCommit: r.commitIndex,
+		LeaderCommit: r.commitIndex, /**/
 	}
-	r.mu.Unlock()
 	reply := &AppendEntriesReply{}
 	if err := r.rpcConns[server].Call(AppendEntries, args, reply); err != nil {
 		r.rpcConns[server] = nil
 		return false
 	}
-	r.mu.Lock()
 	if reply.Success {
 		r.nextIndex[server] = args.PrevLogIndex + len(args.Entries) + 1
 		r.matchIndex[server] = r.nextIndex[server] - 1
 	} else {
 		r.nextIndex[server] = max(1, r.nextIndex[server]-1)
 	}
-	r.mu.Unlock()
 	if r.currentTerm < reply.Term {
-		r.mu.Lock()
 		r.currentTerm = reply.Term
 		r.state = FOLLOWER
 		r.votedFor = NOTVOTED
-		r.mu.Unlock()
 	}
 	return reply.Success
 }

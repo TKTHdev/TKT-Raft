@@ -2,7 +2,6 @@ package main
 
 import (
 	"net/rpc"
-	"sync"
 )
 
 const (
@@ -29,7 +28,6 @@ type Raft struct {
 	state          int
 	rpcConns       map[int]*rpc.Client
 	heartBeatCh    chan bool
-	mu             sync.Mutex
 	clusterSize    int32
 	ClientCh       chan []byte
 	StateMachineCh chan []byte
@@ -50,7 +48,6 @@ func NewRaft(id int, confPath string) *Raft {
 		state:          FOLLOWER,
 		rpcConns:       make(map[int]*rpc.Client),
 		heartBeatCh:    make(chan bool),
-		mu:             sync.Mutex{},
 		clusterSize:    int32(len(peerIPPort)),
 		ClientCh:       make(chan []byte),
 		StateMachineCh: make(chan []byte),
