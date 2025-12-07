@@ -37,7 +37,7 @@ func (c *Client) createRandomCommand() string {
 	}
 }
 
-func sendClientRequest(ch chan interface{}) {
-	command := createRandomCommand()
+func (c *Client) sendClientRequest(ch chan interface{}) {
+	command := c.createRandomCommand()
 	ch <- command
 }
