@@ -121,6 +121,10 @@ func (r *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 
 func (r *Raft) sendAppendEntries(server int) bool {
 	r.mu.Lock()
+	if r.rpcConns[server] == nil {
+		r.mu.Unlock()
+		return false
+	}
 	args := &AppendEntriesArgs{
 		Term:         r.currentTerm,
 		LeaderID:     r.me,
@@ -154,6 +158,9 @@ func (r *Raft) sendAppendEntries(server int) bool {
 }
 
 func (r *Raft) sendRequestVote(server int) bool {
+	if r.rpcConns[server] == nil {
+		return false
+	}
 	args := &RequestVoteArgs{
 		Term:         r.currentTerm,
 		CandidateID:  r.me,
