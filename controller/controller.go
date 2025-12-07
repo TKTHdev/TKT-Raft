@@ -25,7 +25,7 @@ const (
 	User       = "tkt"               // SSHユーザー名
 	ProjectDir = "~/study/raft"      // リモートのプロジェクトディレクトリ
 	BinaryName = "raft_server"       // 生成されるバイナリ名
-	ConfigFile = "../cluster.conf"   // 設定ファイル名 (controllerから見た相対パス)
+	ConfigFile = "cluster.conf"      // 設定ファイル名 (controllerから見た相対パス)
 	LogDir     = "~/study/raft/logs" // ログディレクトリ
 )
 
@@ -104,7 +104,7 @@ func main() {
 
 // 設定ファイルの読み込み
 func loadConfig(path string) []Node {
-	file, err := ioutil.ReadFile(path)
+	file, err := ioutil.ReadFile("../" + path)
 	if err != nil {
 		log.Fatalf("Failed to read config: %v", err)
 	}
