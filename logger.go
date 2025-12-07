@@ -26,8 +26,9 @@ func (r *Raft) logPut(msg string, colour int) {
 		color = "\033[0m"
 	}
 	reset := "\033[0m"
-	logPrefix := fmt.Sprintf("Node %d | Term %d | Log %s | ", r.me, r.currentTerm, r.printLogEntriesAsString())
+	//logPrefix := fmt.Sprintf("Node %d | Term %d | Log %s | ", r.me, r.currentTerm, r.printLogEntriesAsString())
 	//logPrefix := fmt.Sprintf("Node %d | Term %d | ", r.me, r.currentTerm)
+	logPrefix := fmt.Sprintf("Node %d | Term %d | State %d | ", r.me, r.currentTerm, r.printStateMachineAsString())
 	log.Printf("%s%s%s", color, logPrefix+msg, reset)
 }
 
@@ -41,4 +42,18 @@ func (r *Raft) printLogEntriesAsString() string {
 	}
 	logStr += "]"
 	return logStr
+}
+
+func (r *Raft) printStateMachineAsString() string {
+	smStr := "{"
+	i := 0
+	for k, v := range r.StateMachine {
+		smStr += fmt.Sprintf("%s: %s", k, v)
+		if i != len(r.StateMachine)-1 {
+			smStr += ", "
+		}
+		i++
+	}
+	smStr += "}"
+	return smStr
 }

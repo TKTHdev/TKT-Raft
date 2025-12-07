@@ -61,8 +61,42 @@ func (r *Raft) doLeader() error {
 			go r.sendAppendEntries(id)
 		}
 	}
+	//maybe not needed
 	time.Sleep(COMMUNICATION_LATENCY)
+
+	//if matchIndex updated, try to commit entries
+	r.mu.Lock()
+	r.updateCommitIndex()
+	r.updateStateMachine()
+	r.mu.Unlock()
 	return nil
+}
+
+func (r *Raft) updateCommitIndex() {
+	for i := r.commitIndex + 1; i < len(r.log); i++ {
+		var cnt int32 = 1 //count self
+		for peerID, matchIdx := range r.matchIndex {
+			if peerID != r.me && matchIdx >= i && r.log[i].Term == r.currentTerm {
+				atomic.AddInt32(&cnt, 1)
+			}
+		}
+		if atomic.LoadInt32(&cnt) > r.clusterSize/2 {
+			r.commitIndex = i
+			msg := fmt.Sprintf("Committed log entry at index %d with %d matches", i, cnt)
+			r.logPut(msg, GREEN)
+		}
+	}
+}
+
+func (r *Raft) updateStateMachine() {
+	for r.lastApplied < r.commitIndex {
+		r.lastApplied++
+		entry := r.log[r.lastApplied]
+		//apply to state machine
+		r.StateMachineCh <- entry.Command
+		msg := fmt.Sprintf("Applied log entry at index %d to state machine", r.lastApplied)
+		r.logPut(msg, GREEN)
+	}
 }
 
 func (r *Raft) startElection() {

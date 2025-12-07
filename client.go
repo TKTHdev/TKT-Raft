@@ -25,7 +25,7 @@ func (c *Client) randomKey() string {
 }
 
 func (c *Client) randomValue() string {
-	return string(rand.Intn(VALUE_MAX))
+	return fmt.Sprintf("value%d", rand.Intn(VALUE_MAX))
 }
 
 func (c *Client) createRandomCommand() []byte {
