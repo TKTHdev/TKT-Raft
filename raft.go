@@ -12,7 +12,7 @@ const (
 )
 
 type LogEntry struct {
-	command interface{}
+	Command []byte
 	Term    int
 }
 
@@ -31,7 +31,7 @@ type Raft struct {
 	heartBeatCh    chan bool
 	mu             sync.Mutex
 	clusterSize    int32
-	ClientCh       chan interface{}
+	ClientCh       chan []byte
 	StateMachineCh chan interface{}
 }
 
@@ -40,7 +40,7 @@ func NewRaft(id int, confPath string) *Raft {
 	r := &Raft{
 		currentTerm:    -1,
 		votedFor:       -2,
-		log:            []LogEntry{{command: nil, Term: -1}},
+		log:            []LogEntry{{Command: nil, Term: -1}},
 		commitIndex:    -1,
 		lastApplied:    -1,
 		nextIndex:      make(map[int]int),
@@ -51,7 +51,7 @@ func NewRaft(id int, confPath string) *Raft {
 		heartBeatCh:    make(chan bool),
 		mu:             sync.Mutex{},
 		clusterSize:    int32(len(peerIPPort)),
-		ClientCh:       make(chan interface{}),
+		ClientCh:       make(chan []byte),
 		StateMachineCh: make(chan interface{}),
 	}
 	for peerID, _ := range peerIPPort {
@@ -61,5 +61,7 @@ func NewRaft(id int, confPath string) *Raft {
 
 	go r.listenRPC(peerIPPort)
 	go r.initConns(peerIPPort)
+	go r.internalClient()
+	go r.runReplication()
 	return r
 }

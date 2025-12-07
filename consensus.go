@@ -95,6 +95,8 @@ func (r *Raft) startElection() {
 		r.state = LEADER
 		// Here you would add code to start sending heartbeats to other nodes
 	} else {
+		msg := fmt.Sprintf("Lost election with only %d votes, reverting to follower", cnt)
+		r.logPut(msg, RED)
 		r.state = FOLLOWER
 	}
 }
