@@ -131,7 +131,7 @@ func (r *Raft) sendAppendEntries(server int) bool {
 	r.mu.Unlock()
 	reply := &AppendEntriesReply{}
 	if err := r.rpcConns[server].Call(AppendEntries, args, reply); err != nil {
-		//r.rpcConns[server] = nil
+		r.rpcConns[server] = nil
 		return false
 	}
 	r.mu.Lock()
@@ -161,7 +161,7 @@ func (r *Raft) sendRequestVote(server int) bool {
 	}
 	reply := &RequestVoteReply{}
 	if err := r.rpcConns[server].Call(RequestVote, args, reply); err != nil {
-		//r.rpcConns[server] = nil
+		r.rpcConns[server] = nil
 		return false
 	}
 	if r.currentTerm < reply.Term {
