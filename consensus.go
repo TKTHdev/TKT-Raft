@@ -21,7 +21,6 @@ func (r *Raft) Run() {
 		switch state {
 		case FOLLOWER:
 			if err := r.doFollower(); err != nil {
-				r.logPut("I am a follower", GREEN)
 				log.Println("Error in follower state:", err)
 			}
 		case LEADER:
@@ -88,7 +87,10 @@ func (r *Raft) updateStateMachine() {
 		r.lastApplied++
 		entry := r.log[r.lastApplied]
 		//apply to state machine
-		r.StateMachineCh <- entry.Command
+		r.applyCommand(entry.Command)
+		logMsg := fmt.Sprintf("Applied log entry %d to state machine: %s", r.lastApplied, string(entry.Command))
+		r.logPut(logMsg, ORANGE)
+
 	}
 }
 
@@ -103,19 +105,21 @@ func (r *Raft) startElection() {
 	}
 	for _, id := range ids {
 		go func(target int) {
+			r.mu.Lock()
 			msg := fmt.Sprintf("Requesting vote from node %d", target)
-			r.logPut(msg, BLUE)
+			r.logPut(msg, MAGENTA)
 			if gotVoted := r.sendRequestVote(target); gotVoted {
 				msg := fmt.Sprintf("Received vote from node %d", target)
-				r.logPut(msg, BLUE)
+				r.logPut(msg, CYAN)
 				atomic.AddInt32(&cnt, 1)
 			}
+			r.mu.Unlock()
 		}(id)
 	}
 	time.Sleep(COMMUNICATION_LATENCY)
 	if atomic.LoadInt32(&cnt) > r.clusterSize/2 {
 		msg := fmt.Sprintf("Won election  with %d votes, becoming leader", cnt)
-		r.logPut(msg, YELLOW)
+		r.logPut(msg, GREEN)
 		r.state = LEADER
 		// Here you would add code to start sending heartbeats to other nodes
 	} else {

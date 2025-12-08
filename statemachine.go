@@ -1,14 +1,8 @@
 package main
 
-func (r *Raft) waitForApply() {
-	for {
-		command := <-r.StateMachineCh
-		r.applyCommand(string(command))
-	}
-}
-
-func (r *Raft) applyCommand(command string) {
-	parts := splitCommand(command)
+func (r *Raft) applyCommand(command []byte) {
+	commandStr := string(command)
+	parts := splitCommand(commandStr)
 	if len(parts) == 0 {
 		return
 	}

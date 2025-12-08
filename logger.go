@@ -11,23 +11,29 @@ const (
 	RED
 	YELLOW
 	WHITE
+	CYAN
+	PURPLE
+	MAGENTA
+	ORANGE
+	EMERALD
 )
 
 func (r *Raft) logPut(msg string, colour int) {
 	colors := map[int]string{
-		BLUE:   "\033[34m",
-		GREEN:  "\033[32m",
-		RED:    "\033[31m",
-		YELLOW: "\033[33m",
-		WHITE:  "\033[37m",
+		BLUE:    "\033[34m",
+		GREEN:   "\033[32m",
+		RED:     "\033[31m",
+		YELLOW:  "\033[33m",
+		WHITE:   "\033[37m",
+		CYAN:    "\033[36m",
+		PURPLE:  "\033[35m",
+		MAGENTA: "\033[95m",
 	}
 	color, ok := colors[colour]
 	if !ok {
 		color = "\033[0m"
 	}
 	reset := "\033[0m"
-	//logPrefix := fmt.Sprintf("Node %d | Term %d | Log %s | ", r.me, r.currentTerm, r.printLogEntriesAsString())
-	//logPrefix := fmt.Sprintf("Node %d | Term %d | ", r.me, r.currentTerm)
 	logPrefix := fmt.Sprintf("Node %d | Term %d | State %d | ", r.me, r.currentTerm, r.printStateMachineAsString())
 	log.Printf("%s%s%s", color, logPrefix+msg, reset)
 }

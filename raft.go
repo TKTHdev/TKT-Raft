@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/rpc"
+	"sync"
 )
 
 const (
@@ -29,9 +30,11 @@ type Raft struct {
 	rpcConns       map[int]*rpc.Client
 	heartBeatCh    chan bool
 	clusterSize    int32
-	ClientCh       chan []byte
 	StateMachineCh chan []byte
 	StateMachine   map[string]string
+	IPPortList     map[int]string
+	ClientCh       chan []byte
+	mu             sync.RWMutex
 }
 
 func NewRaft(id int, confPath string) *Raft {
@@ -49,9 +52,11 @@ func NewRaft(id int, confPath string) *Raft {
 		rpcConns:       make(map[int]*rpc.Client),
 		heartBeatCh:    make(chan bool),
 		clusterSize:    int32(len(peerIPPort)),
-		ClientCh:       make(chan []byte),
 		StateMachineCh: make(chan []byte),
 		StateMachine:   make(map[string]string),
+		IPPortList:     peerIPPort,
+		ClientCh:       make(chan []byte),
+		mu:             sync.RWMutex{},
 	}
 	for peerID, _ := range peerIPPort {
 		r.nextIndex[peerID] = 1
@@ -61,7 +66,6 @@ func NewRaft(id int, confPath string) *Raft {
 	go r.listenRPC(peerIPPort)
 	go r.initConns(peerIPPort)
 	go r.internalClient()
-	go r.runReplication()
-	go r.waitForApply()
+	go r.handleClientRequest()
 	return r
 }

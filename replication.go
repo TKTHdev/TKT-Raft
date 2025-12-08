@@ -1,12 +1,24 @@
 package main
 
-func (r *Raft) runReplication() {
+/*List of concurrent-accessed fields:*/
+/*
+r.log
+r.currentTerm
+*/
+
+func (r *Raft) handleClientRequest() {
 	for {
 		command := <-r.ClientCh
-		log := LogEntry{
-			Command: command,
-			Term:    r.currentTerm,
-		}
-		r.log = append(r.log, log)
+		r.appendToLog(command)
 	}
+}
+
+func (r *Raft) appendToLog(command []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	log := LogEntry{
+		Command: command,
+		Term:    r.currentTerm,
+	}
+	r.log = append(r.log, log)
 }

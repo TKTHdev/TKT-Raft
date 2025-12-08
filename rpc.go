@@ -1,5 +1,7 @@
 package main
 
+/*List of concurrent-accessed fields*/
+
 const (
 	AppendEntries = "Raft.AppendEntries"
 	RequestVote   = "Raft.RequestVote"
@@ -7,7 +9,6 @@ const (
 
 const (
 	NOTVOTED = -2
-	NOLEADER = -1
 )
 
 type AppendEntriesArgs struct {
@@ -37,6 +38,8 @@ type RequestVoteReply struct {
 }
 
 func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	//0. If term > currentTerm, set currentTerm = term, convert to follower
 	if r.currentTerm < args.Term {
 		r.currentTerm = args.Term
@@ -89,6 +92,10 @@ func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply)
 }
 
 func (r *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.logPut("Received RequestVote RPC", CYAN)
+	//0. If term > currentTerm, set currentTerm = term, convert to follower
 	//1. Reply false if term < currentTerm
 	if args.Term < r.currentTerm {
 		reply.Term = r.currentTerm
@@ -116,6 +123,8 @@ func (r *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 }
 
 func (r *Raft) sendAppendEntries(server int) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.rpcConns[server] == nil {
 		return false
 	}
