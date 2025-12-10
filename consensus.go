@@ -9,12 +9,14 @@ import (
 )
 
 const (
-	MINELECTION_TIMEOUT   = 200 * time.Millisecond
-	MAXELECTION_TIMEOUT   = 1200 * time.Millisecond
-	COMMUNICATION_LATENCY = 50 * time.Millisecond
+	MINELECTION_TIMEOUT   = 1000 * time.Millisecond
+	MAXELECTION_TIMEOUT   = 6000 * time.Millisecond
+	COMMUNICATION_LATENCY = 500 * time.Millisecond
 )
 
 func (r *Raft) Run() {
+	time.Sleep(500 * time.Millisecond) //wait for connections to establish
+	r.dialRPCToAllPeers()
 	for {
 		state := r.state
 
@@ -100,8 +102,10 @@ func (r *Raft) startElection() {
 	r.votedFor = r.me
 	var cnt int32 = 1 //vote for self already
 	ids := make([]int, 0, r.clusterSize)
-	for id := range r.rpcConns {
-		ids = append(ids, id)
+	for i := 1; i <= 3; i++ {
+		if i != r.me {
+			ids = append(ids, i)
+		}
 	}
 	for _, id := range ids {
 		go func(target int) {
@@ -125,6 +129,8 @@ func (r *Raft) startElection() {
 	} else {
 		msg := fmt.Sprintf("Lost election with only %d votes, reverting to follower", cnt)
 		r.logPut(msg, RED)
+		msg = fmt.Sprintf("Current connection is %d", r.rpcConns)
+		r.logPut(msg, BLUE)
 		r.state = FOLLOWER
 	}
 }

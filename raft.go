@@ -32,9 +32,9 @@ type Raft struct {
 	clusterSize    int32
 	StateMachineCh chan []byte
 	StateMachine   map[string]string
-	IPPortList     map[int]string
 	ClientCh       chan []byte
 	mu             sync.RWMutex
+	peerIPPort     map[int]string
 }
 
 func NewRaft(id int, confPath string) *Raft {
@@ -54,9 +54,9 @@ func NewRaft(id int, confPath string) *Raft {
 		clusterSize:    int32(len(peerIPPort)),
 		StateMachineCh: make(chan []byte),
 		StateMachine:   make(map[string]string),
-		IPPortList:     peerIPPort,
 		ClientCh:       make(chan []byte),
 		mu:             sync.RWMutex{},
+		peerIPPort:     peerIPPort,
 	}
 	for peerID, _ := range peerIPPort {
 		r.nextIndex[peerID] = 1
@@ -64,7 +64,6 @@ func NewRaft(id int, confPath string) *Raft {
 	}
 
 	go r.listenRPC(peerIPPort)
-	go r.initConns(peerIPPort)
 	go r.internalClient()
 	go r.handleClientRequest()
 	return r

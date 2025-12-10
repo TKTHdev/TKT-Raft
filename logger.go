@@ -34,7 +34,7 @@ func (r *Raft) logPut(msg string, colour int) {
 		color = "\033[0m"
 	}
 	reset := "\033[0m"
-	logPrefix := fmt.Sprintf("Node %d | Term %d | State %d | ", r.me, r.currentTerm, r.printStateMachineAsString())
+	logPrefix := fmt.Sprintf("Node %d | Term %d | State %s | ", r.me, r.currentTerm, r.printStateMachineAsString())
 	log.Printf("%s%s%s", color, logPrefix+msg, reset)
 }
 

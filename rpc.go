@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 /*List of concurrent-accessed fields*/
 
 const (
@@ -53,11 +55,17 @@ func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply)
 		return nil
 	}
 	//2. Reply false if log doesn't contain an entry at prevLogIndex whose term matches prevLogTerm
-	if r.log[args.PrevLogIndex].Term != args.PrevLogTerm || len(r.log) <= args.PrevLogIndex {
+	if len(r.log) <= args.PrevLogIndex {
 		reply.Term = r.currentTerm
 		reply.Success = false
 		return nil
 	}
+	if r.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+		reply.Term = r.currentTerm
+		reply.Success = false
+		return nil
+	}
+
 	//3. If an existing entry conflicts with a new one (same index but different terms), delete the existing entry and all that follow it
 	for i, entry := range args.Entries {
 		logIndex := args.PrevLogIndex + 1 + i
@@ -126,6 +134,7 @@ func (r *Raft) sendAppendEntries(server int) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.rpcConns[server] == nil {
+		r.dialRPCToPeer(server)
 		return false
 	}
 	args := &AppendEntriesArgs{
@@ -138,7 +147,9 @@ func (r *Raft) sendAppendEntries(server int) bool {
 	}
 	reply := &AppendEntriesReply{}
 	if err := r.rpcConns[server].Call(AppendEntries, args, reply); err != nil {
-		r.rpcConns[server] = nil
+		logMsg := fmt.Sprintf("Error sending AppendEntries RPC to node %d: %v", server, err)
+		r.logPut(logMsg, PURPLE)
+		r.dialRPCToPeer(server)
 		return false
 	}
 	if reply.Success {
@@ -157,6 +168,7 @@ func (r *Raft) sendAppendEntries(server int) bool {
 
 func (r *Raft) sendRequestVote(server int) bool {
 	if r.rpcConns[server] == nil {
+		r.dialRPCToPeer(server)
 		return false
 	}
 	args := &RequestVoteArgs{
@@ -167,7 +179,9 @@ func (r *Raft) sendRequestVote(server int) bool {
 	}
 	reply := &RequestVoteReply{}
 	if err := r.rpcConns[server].Call(RequestVote, args, reply); err != nil {
-		r.rpcConns[server] = nil
+		logMsg := fmt.Sprintf("Error sending RequestVote RPC to node %d: %v", server, err)
+		r.logPut(logMsg, PURPLE)
+		r.dialRPCToPeer(server)
 		return false
 	}
 	if r.currentTerm < reply.Term {
