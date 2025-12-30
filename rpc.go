@@ -2,8 +2,6 @@ package main
 
 import "fmt"
 
-/*List of concurrent-accessed fields*/
-
 const (
 	AppendEntries = "Raft.AppendEntries"
 	RequestVote   = "Raft.RequestVote"

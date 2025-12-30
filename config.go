@@ -13,7 +13,6 @@ type Node struct {
 	Port int    `json:"port"`
 }
 
-// ★ 新しく追加・実装する関数
 func parseConfig(confPath string) map[int]string {
 	file, err := ioutil.ReadFile(confPath)
 	if err != nil {

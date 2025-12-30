@@ -1,11 +1,5 @@
 package main
 
-/*List of concurrent-accessed fields:*/
-/*
-r.log
-r.currentTerm
-*/
-
 func (r *Raft) handleClientRequest() {
 	for {
 		command := <-r.ClientCh
