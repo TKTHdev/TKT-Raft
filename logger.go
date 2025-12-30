@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"sort"
 )
 
 const (
@@ -52,13 +53,17 @@ func (r *Raft) printLogEntriesAsString() string {
 
 func (r *Raft) printStateMachineAsString() string {
 	smStr := "{"
-	i := 0
-	for k, v := range r.StateMachine {
+	keys := make([]string, 0, len(r.StateMachine))
+	for k := range r.StateMachine {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for i, k := range keys {
+		v := r.StateMachine[k]
 		smStr += fmt.Sprintf("%s: %s", k, v)
-		if i != len(r.StateMachine)-1 {
+		if i != len(keys)-1 {
 			smStr += ", "
 		}
-		i++
 	}
 	smStr += "}"
 	return smStr
