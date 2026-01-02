@@ -1,6 +1,6 @@
 # --- 設定項目 ---
 USER         := tkt
-PROJECT_DIR  := ~/study/raft
+PROJECT_DIR  := ~/proj/raft
 BINARY_NAME  := raft_server
 CONFIG_FILE  := ../cluster.conf
 LOG_DIR      := $(PROJECT_DIR)/logs
@@ -55,7 +55,7 @@ start:
 	   ssh -n -f $(USER)@$$ip "mkdir -p $(LOG_DIR) && cd $(PROJECT_DIR) && \
 	      (pkill -x $$bin || true) && \
 	      sleep 0.5 && \
-	      nohup ./$$bin start --id $$id --conf cluster.conf > $(LOG_DIR)/node_$$id.log 2>&1 < /dev/null &"; \
+	      nohup ./$$bin start --id $$id --conf cluster.conf > $(LOG_DIR)/node_$$id.ans 2>&1 < /dev/null &"; \
 	done
 	@echo "All start commands initiated."
 
@@ -74,5 +74,5 @@ clean:
 		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 		bin="$(BINARY_NAME)_$$id"; \
 		echo "[$$ip] Cleaning $$bin..."; \
-		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && rm $$bin || echo 'Binary not existing'" & \
+		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && rm $$bin || echo 'Binary not existing' && rm logs/node_$$id.ans || echo 'Log not existing'" & \
 	done; wait
