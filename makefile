@@ -2,7 +2,7 @@
 USER         := tkt
 PROJECT_DIR  := ~/proj/raft
 BINARY_NAME  := raft_server
-CONFIG_FILE  := ../cluster.conf
+CONFIG_FILE  := cluster.conf
 LOG_DIR      := $(PROJECT_DIR)/logs
 
 # --- 内部変数 ---
