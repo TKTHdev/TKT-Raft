@@ -12,6 +12,7 @@ const (
 	MINELECTION_TIMEOUT   = 1000 * time.Millisecond
 	MAXELECTION_TIMEOUT   = 6000 * time.Millisecond
 	COMMUNICATION_LATENCY = 500 * time.Millisecond
+
 )
 
 func (r *Raft) Run() {
@@ -19,7 +20,6 @@ func (r *Raft) Run() {
 	r.dialRPCToAllPeers()
 	for {
 		state := r.state
-
 		switch state {
 		case FOLLOWER:
 			if err := r.doFollower(); err != nil {
@@ -61,9 +61,7 @@ func (r *Raft) doLeader() error {
 			go r.sendAppendEntries(id)
 		}
 	}
-	//maybe not needed
 	time.Sleep(COMMUNICATION_LATENCY)
-
 	//if matchIndex updated, try to commit entries
 	r.updateCommitIndex()
 	r.updateStateMachine()
