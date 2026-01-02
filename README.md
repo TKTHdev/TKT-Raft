@@ -71,14 +71,12 @@ You can run a 3-node cluster on your local machine by spawning three separate pr
 
 2.  **Build and Start the nodes:**
     ```bash
-    cd controller
     make build    # Builds raft_server_1, raft_server_2, raft_server_3
     make start    # Starts all nodes in the background
     ```
 
 3.  **To stop the cluster:**
     ```bash
-    cd controller
     make kill
     ```
 
