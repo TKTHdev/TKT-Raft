@@ -110,8 +110,14 @@ func (r *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 	} else if r.currentTerm < args.Term {
 		r.votedFor = NOTVOTED
 		r.currentTerm = args.Term
+		r.state = FOLLOWER
 	}
-	r.state = FOLLOWER
+
+	if r.currentTerm == args.Term && r.votedFor != NOTVOTED && r.votedFor != args.CandidateID {
+		reply.Term = r.currentTerm
+		reply.VoteGranted = false
+		return nil
+	}
 
 	//2. If votedFor is null or candidateId, and candidate's log is at least as up-to-date as receiver's log, grant vote
 	lastLogIndex := len(r.log) - 1
@@ -119,6 +125,7 @@ func (r *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 	upToDate := (lastLogTerm < args.LastLogTerm) || (args.LastLogTerm == lastLogTerm && lastLogIndex <= args.LastLogIndex)
 	if (r.votedFor == NOTVOTED || r.votedFor == args.CandidateID) && upToDate {
 		r.votedFor = args.CandidateID
+		r.state = FOLLOWER
 		reply.VoteGranted = true
 	} else {
 		reply.VoteGranted = false

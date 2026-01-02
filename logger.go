@@ -35,7 +35,19 @@ func (r *Raft) logPut(msg string, colour int) {
 		color = "\033[0m"
 	}
 	reset := "\033[0m"
-	logPrefix := fmt.Sprintf("Node %d | Term %d | State %s | ", r.me, r.currentTerm, r.printStateMachineAsString())
+	//print Node ID, Term, State, leaderID, votedFor
+	stateStr := ""
+	switch r.state {
+	case LEADER:
+		stateStr = "LEADER"
+	case FOLLOWER:
+		stateStr = "FOLLOWER"
+	case CANDIDATE:
+		stateStr = "CANDIDATE"
+	default:
+		stateStr = "UNKNOWN"
+	}
+	logPrefix := fmt.Sprintf("[Node %d | Term %d | SM %s | Role %s | VotedFor %d] ", r.me, r.currentTerm, r.printStateMachineAsString(), stateStr, r.votedFor)
 	log.Printf("%s%s%s", color, logPrefix+msg, reset)
 }
 

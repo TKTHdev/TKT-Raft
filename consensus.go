@@ -10,9 +10,8 @@ import (
 
 const (
 	MINELECTION_TIMEOUT   = 1000 * time.Millisecond
-	MAXELECTION_TIMEOUT   = 6000 * time.Millisecond
+	MAXELECTION_TIMEOUT   = 2000 * time.Millisecond
 	COMMUNICATION_LATENCY = 500 * time.Millisecond
-
 )
 
 func (r *Raft) Run() {
@@ -98,6 +97,7 @@ func (r *Raft) startElection() {
 	r.state = CANDIDATE
 	r.currentTerm++
 	r.votedFor = r.me
+	termBeforeRPC := r.currentTerm
 	var cnt int32 = 1 //vote for self already
 	ids := make([]int, 0, r.clusterSize)
 	for i := 1; i <= 3; i++ {
@@ -119,7 +119,7 @@ func (r *Raft) startElection() {
 		}(id)
 	}
 	time.Sleep(COMMUNICATION_LATENCY)
-	if atomic.LoadInt32(&cnt) > r.clusterSize/2 {
+	if atomic.LoadInt32(&cnt) > r.clusterSize/2 && r.state == CANDIDATE && termBeforeRPC == r.currentTerm {
 		msg := fmt.Sprintf("Won election  with %d votes, becoming leader", cnt)
 		r.logPut(msg, GREEN)
 		r.state = LEADER

@@ -54,5 +54,4 @@ func (r *Raft) listenRPC(peerIPPort map[int]string) error {
 		}
 		go rpc.ServeConn(conn)
 	}
-	return nil
 }
