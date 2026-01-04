@@ -69,7 +69,7 @@ func (r *Raft) doLeader() error {
 
 func (r *Raft) runApplier() {
 	for {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 		r.updateCommitIndex()
 		r.updateStateMachine()
 	}
@@ -106,7 +106,7 @@ func (r *Raft) updateStateMachine() {
 		r.mu.Unlock()
 
 		//apply to state machine
-		r.applyCommand(entry.Command)
+		r.applyCommand(entry.Command, idx)
 		logMsg := fmt.Sprintf("Applied log entry %d to state machine: %s", idx, string(entry.Command))
 		r.logPut(logMsg, ORANGE)
 

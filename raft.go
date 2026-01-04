@@ -17,27 +17,32 @@ type LogEntry struct {
 	Term    int
 }
 
+type ClientRequest struct {
+	Command []byte
+	RespCh  chan Response
+}
+
 type Raft struct {
 	//net rpc conn
-	currentTerm    int
-	votedFor       int
-	log            []LogEntry
-	commitIndex    int
-	lastApplied    int
-	nextIndex      map[int]int
-	matchIndex     map[int]int
-	me             int
-	state          int
-	rpcConns       map[int]*rpc.Client
-	heartBeatCh    chan bool
-	clusterSize    int32
-	StateMachineCh chan []byte
-	StateMachine   map[string]string
-	ReqCh          chan []byte
-	RespCh         chan Response
-	mu             sync.RWMutex
-	peerIPPort     map[int]string
-	storage        *Storage
+	currentTerm      int
+	votedFor         int
+	log              []LogEntry
+	commitIndex      int
+	lastApplied      int
+	nextIndex        map[int]int
+	matchIndex       map[int]int
+	me               int
+	state            int
+	rpcConns         map[int]*rpc.Client
+	heartBeatCh      chan bool
+	clusterSize      int32
+	StateMachineCh   chan []byte
+	StateMachine     map[string]string
+	ReqCh            chan ClientRequest
+	pendingResponses map[int]chan Response
+	mu               sync.RWMutex
+	peerIPPort       map[int]string
+	storage          *Storage
 }
 
 func NewRaft(id int, confPath string) *Raft {
@@ -59,25 +64,25 @@ func NewRaft(id int, confPath string) *Raft {
 	fullLog = append(fullLog, logs...)
 
 	r := &Raft{
-		currentTerm:    term,
-		votedFor:       votedFor,
-		log:            fullLog,
-		commitIndex:    -1,
-		lastApplied:    -1,
-		nextIndex:      make(map[int]int),
-		matchIndex:     make(map[int]int),
-		me:             id,
-		state:          FOLLOWER,
-		rpcConns:       make(map[int]*rpc.Client),
-		heartBeatCh:    make(chan bool),
-		clusterSize:    int32(len(peerIPPort)),
-		StateMachineCh: make(chan []byte),
-		StateMachine:   make(map[string]string),
-		ReqCh:          make(chan []byte),
-		RespCh:         make(chan Response),
-		mu:             sync.RWMutex{},
-		peerIPPort:     peerIPPort,
-		storage:        storage,
+		currentTerm:      term,
+		votedFor:         votedFor,
+		log:              fullLog,
+		commitIndex:      -1,
+		lastApplied:      -1,
+		nextIndex:        make(map[int]int),
+		matchIndex:       make(map[int]int),
+		me:               id,
+		state:            FOLLOWER,
+		rpcConns:         make(map[int]*rpc.Client),
+		heartBeatCh:      make(chan bool),
+		clusterSize:      int32(len(peerIPPort)),
+		StateMachineCh:   make(chan []byte),
+		StateMachine:     make(map[string]string),
+		ReqCh:            make(chan ClientRequest),
+		pendingResponses: make(map[int]chan Response),
+		mu:               sync.RWMutex{},
+		peerIPPort:       peerIPPort,
+		storage:          storage,
 	}
 	for peerID, _ := range peerIPPort {
 		r.nextIndex[peerID] = len(fullLog)
@@ -85,7 +90,8 @@ func NewRaft(id int, confPath string) *Raft {
 	}
 
 	go r.listenRPC(peerIPPort)
-	go r.internalClient()
+	//go r.internalClient()
+	go r.concClient()
 	go r.handleClientRequest()
 	go r.runApplier()
 	return r

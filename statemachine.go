@@ -4,7 +4,7 @@ import (
 	"fmt"
 )
 
-func (r *Raft) applyCommand(command []byte) {
+func (r *Raft) applyCommand(command []byte, index int) {
 	commandStr := string(command)
 	parts := splitCommand(commandStr)
 	if len(parts) == 0 {
@@ -48,9 +48,18 @@ func (r *Raft) applyCommand(command []byte) {
 		}
 	}
 	if r.state == LEADER {
-		select {
-		case r.RespCh <- Response:
-		default:
+		r.mu.Lock()
+		ch, ok := r.pendingResponses[index]
+		if ok {
+			delete(r.pendingResponses, index)
+		}
+		r.mu.Unlock()
+
+		if ok {
+			select {
+			case ch <- Response:
+			default:
+			}
 		}
 	}
 	r.logPut(fmt.Sprintf("State Machine after applying command: %s", r.printStateMachineAsString()), GREEN)

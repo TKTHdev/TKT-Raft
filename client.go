@@ -4,10 +4,15 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
+
+	"github.com/sourcegraph/conc/pool"
 )
 
 const (
 	VALUE_MAX = 1500
+	WORKERS   = 16
+	CLIENT_START = 4000 * time.Millisecond
+	EXPERIMENT_DURATION = 5000 * time.Millisecond
 )
 
 type Response struct {
@@ -97,10 +102,14 @@ func (r *Raft) internalClient() {
 	for {
 		if r.state == LEADER {
 			command := client.createRandomCommand()
+			req := ClientRequest{
+				Command: command,
+				RespCh:  make(chan Response, 1),
+			}
 
-			r.ReqCh <- command
+			r.ReqCh <- req
 			start := time.Now()
-			resp := <-r.RespCh
+			resp := <-req.RespCh
 			end := time.Since(start)
 
 			if resp.success {
@@ -114,6 +123,61 @@ func (r *Raft) internalClient() {
 			}
 		} else {
 			time.Sleep(100 * time.Millisecond)
+		}
+	}
+}
+
+func (r *Raft) concClient() {
+	time.Sleep(CLIENT_START) //wait for connections to establish
+	if r.state != LEADER {
+		return
+	}
+	p := pool.NewWithResults[int]().WithErrors().WithMaxGoroutines(WORKERS)
+	for i := 0; i < WORKERS; i++ {
+		p.Go(func() (int, error) { return concClientWorker(r) })
+	}
+	results, err := p.Wait()
+	//cal throughput
+	if err != nil {
+		fmt.Println("ConcClient encountered error:", err)
+		return
+	}
+	totalCommands := 0
+	for _, cnt := range results {
+		totalCommands += cnt
+	}
+	throughput := float64(totalCommands) / EXPERIMENT_DURATION.Seconds()
+	fmt.Printf("ConcClient total commands processed: %d\n", totalCommands)
+	fmt.Printf("ConcClient throughput: %.2f commands/second\n", throughput)
+}
+
+func concClientWorker(r *Raft) (int, error) {
+	client := &Client{
+		internalState: make(map[string]string),
+	}
+	ticker := time.NewTicker(EXPERIMENT_DURATION)
+	cnt := 0
+	for{
+		select {
+		case <-ticker.C:
+			return cnt ,nil
+		default:	
+		}
+		if r.state == LEADER {
+			command := client.createRandomCommand()
+			req := ClientRequest{
+				Command: command,
+				RespCh:  make(chan Response, 1),
+			}
+			r.ReqCh <- req
+			resp := <-req.RespCh
+
+			if resp.success {
+				cnt += 1
+			} else {
+				fmt.Println("ConcClient command failed:", string(command))
+				return cnt, fmt.Errorf("command failed")
+			}
 		}
 	}
 }
