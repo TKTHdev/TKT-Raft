@@ -48,7 +48,10 @@ func (r *Raft) applyCommand(command []byte) {
 		}
 	}
 	if r.state == LEADER {
-		r.RespCh <- Response
+		select {
+		case r.RespCh <- Response:
+		default:
+		}
 	}
 	r.logPut(fmt.Sprintf("State Machine after applying command: %s", r.printStateMachineAsString()), GREEN)
 }

@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	MINELECTION_TIMEOUT   = 1000 * time.Millisecond
-	MAXELECTION_TIMEOUT   = 2000 * time.Millisecond
-	COMMUNICATION_LATENCY = 500 * time.Millisecond
-	AFTER_START_DELAY     = 500 * time.Millisecond
+	MINELECTION_TIMEOUT   = 150 * time.Millisecond
+	MAXELECTION_TIMEOUT   = 300 * time.Millisecond
+	COMMUNICATION_LATENCY = 50 * time.Millisecond
+	AFTER_START_DELAY     = 50 * time.Millisecond
 )
 
 func (r *Raft) Run() {
@@ -63,6 +63,7 @@ func (r *Raft) doLeader() error {
 	}
 	r.updateCommitIndex()
 	r.updateStateMachine()
+	time.Sleep(30 * time.Millisecond)
 	return nil
 }
 
@@ -108,8 +109,6 @@ func (r *Raft) startElection() {
 	}
 	for _, id := range ids {
 		go func(target int) {
-			r.mu.Lock()
-			defer r.mu.Unlock()
 			msg := fmt.Sprintf("Requesting vote from node %d", target)
 			r.logPut(msg, MAGENTA)
 			if gotVoted := r.sendRequestVote(target); gotVoted {

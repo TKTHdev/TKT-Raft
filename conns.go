@@ -18,7 +18,9 @@ func (r *Raft) dialRPCToPeer(peerID int) error {
 		r.logPut(logMsg, PURPLE)
 		return errors.WithStack(err)
 	}
+	r.mu.Lock()
 	r.rpcConns[peerID] = client
+	r.mu.Unlock()
 	msg := fmt.Sprintf("Connected to peer %d at %s", peerID, r.peerIPPort[peerID])
 	r.logPut(msg, GREEN)
 	return nil

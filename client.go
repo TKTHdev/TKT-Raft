@@ -80,6 +80,8 @@ func (r *Raft) internalClient() {
 			} else {
 				fmt.Println("Client command failed:", string(command))
 			}
+		} else {
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
 }
