@@ -20,35 +20,35 @@ const (
 
 func (r *Raft) logPut(msg string, colour int) {
 	/*
-	colors := map[int]string{
-		BLUE:    "\033[34m",
-		GREEN:   "\033[32m",
-		RED:     "\033[31m",
-		YELLOW:  "\033[33m",
-		WHITE:   "\033[37m",
-		CYAN:    "\033[36m",
-		PURPLE:  "\033[35m",
-		MAGENTA: "\033[95m",
-	}
-	color, ok := colors[colour]
-	if !ok {
-		color = "\033[0m"
-	}
-	reset := "\033[0m"
-	//print Node ID, Term, State, leaderID, votedFor
-	stateStr := ""
-	switch r.state {
-	case LEADER:
-		stateStr = "LEADER"
-	case FOLLOWER:
-		stateStr = "FOLLOWER"
-	case CANDIDATE:
-		stateStr = "CANDIDATE"
-	default:
-		stateStr = "UNKNOWN"
-	}
-	logPrefix := fmt.Sprintf("[Node %d | Term %d | SM %s | Role %s | VotedFor %d] ", r.me, r.currentTerm, r.printStateMachineAsString(), stateStr, r.votedFor)
-	log.Printf("%s%s%s", color, logPrefix+msg, reset)
+		colors := map[int]string{
+			BLUE:    "\033[34m",
+			GREEN:   "\033[32m",
+			RED:     "\033[31m",
+			YELLOW:  "\033[33m",
+			WHITE:   "\033[37m",
+			CYAN:    "\033[36m",
+			PURPLE:  "\033[35m",
+			MAGENTA: "\033[95m",
+		}
+		color, ok := colors[colour]
+		if !ok {
+			color = "\033[0m"
+		}
+		reset := "\033[0m"
+		//print Node ID, Term, State, leaderID, votedFor
+		stateStr := ""
+		switch r.state {
+		case LEADER:
+			stateStr = "LEADER"
+		case FOLLOWER:
+			stateStr = "FOLLOWER"
+		case CANDIDATE:
+			stateStr = "CANDIDATE"
+		default:
+			stateStr = "UNKNOWN"
+		}
+		logPrefix := fmt.Sprintf("[Node %d | Term %d | SM %s | Role %s | VotedFor %d] ", r.me, r.currentTerm, r.printStateMachineAsString(), stateStr, r.votedFor)
+		log.Printf("%s%s%s", color, logPrefix+msg, reset)
 	*/
 }
 

@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	VALUE_MAX       = 1500
+	VALUE_MAX = 1500
 )
 
 type Response struct {
@@ -38,7 +38,7 @@ func (c *Client) createRandomCommand() []byte {
 	op := c.randomOperation()
 	key := c.randomKey()
 	if op == "GET" && c.internalState[key] == "" {
-		value := c.randomValue() 
+		value := c.randomValue()
 		commandString := fmt.Sprintf("SET %s %s", key, value)
 		return []byte(commandString)
 	}
@@ -65,7 +65,7 @@ func (c *Client) updateInternalState(command []byte) {
 	}
 }
 
-func (c *Client)validateResponse(command []byte, resp Response) bool {
+func (c *Client) validateResponse(command []byte, resp Response) bool {
 	cmdStr := string(command)
 	var key, value string
 
@@ -97,7 +97,7 @@ func (r *Raft) internalClient() {
 	for {
 		if r.state == LEADER {
 			command := client.createRandomCommand()
-			
+
 			r.ReqCh <- command
 			start := time.Now()
 			resp := <-r.RespCh
@@ -106,7 +106,7 @@ func (r *Raft) internalClient() {
 			if resp.success {
 				client.updateInternalState(command)
 				if ok := client.validateResponse(command, resp); !ok {
-				}else{
+				} else {
 					fmt.Println("Client command succeeded in", end, "for command:", string(command))
 				}
 			} else {

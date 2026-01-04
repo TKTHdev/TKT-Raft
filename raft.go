@@ -55,8 +55,8 @@ func NewRaft(id int, confPath string) *Raft {
 		clusterSize:    int32(len(peerIPPort)),
 		StateMachineCh: make(chan []byte),
 		StateMachine:   make(map[string]string),
-		ReqCh:       make(chan []byte),
-		RespCh:       make(chan Response),
+		ReqCh:          make(chan []byte),
+		RespCh:         make(chan Response),
 		mu:             sync.RWMutex{},
 		peerIPPort:     peerIPPort,
 	}
