@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/rpc"
 	"sync"
 )
@@ -36,14 +37,31 @@ type Raft struct {
 	RespCh         chan Response
 	mu             sync.RWMutex
 	peerIPPort     map[int]string
+	storage        *Storage
 }
 
 func NewRaft(id int, confPath string) *Raft {
 	peerIPPort := parseConfig(confPath)
+	storage, err := NewStorage(id)
+	if err != nil {
+		panic(err)
+	}
+	term, votedFor, err := storage.LoadState()
+	if err != nil {
+		panic(err)
+	}
+	logs, err := storage.LoadLog()
+	if err != nil {
+		panic(err)
+	}
+	// Prepend dummy entry
+	fullLog := []LogEntry{{Command: nil, Term: 0}}
+	fullLog = append(fullLog, logs...)
+
 	r := &Raft{
-		currentTerm:    -1,
-		votedFor:       -2,
-		log:            []LogEntry{{Command: nil, Term: -1}},
+		currentTerm:    term,
+		votedFor:       votedFor,
+		log:            fullLog,
 		commitIndex:    -1,
 		lastApplied:    -1,
 		nextIndex:      make(map[int]int),
@@ -59,9 +77,10 @@ func NewRaft(id int, confPath string) *Raft {
 		RespCh:         make(chan Response),
 		mu:             sync.RWMutex{},
 		peerIPPort:     peerIPPort,
+		storage:        storage,
 	}
 	for peerID, _ := range peerIPPort {
-		r.nextIndex[peerID] = 1
+		r.nextIndex[peerID] = len(fullLog)
 		r.matchIndex[peerID] = 0
 	}
 
@@ -70,4 +89,10 @@ func NewRaft(id int, confPath string) *Raft {
 	go r.handleClientRequest()
 	go r.runApplier()
 	return r
+}
+
+func (r *Raft) persistState() {
+	if err := r.storage.SaveState(r.currentTerm, r.votedFor); err != nil {
+		fmt.Printf("Error persisting state: %v\n", err)
+	}
 }

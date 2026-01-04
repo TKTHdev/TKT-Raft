@@ -45,6 +45,7 @@ func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply)
 		r.currentTerm = args.Term
 		r.state = FOLLOWER
 		r.votedFor = NOTVOTED
+		r.persistState()
 	}
 	//1. Reply false if term < currentTerm
 	if args.Term < r.currentTerm {
@@ -70,15 +71,26 @@ func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply)
 		if logIndex < len(r.log) {
 			if r.log[logIndex].Term != entry.Term {
 				r.log = r.log[:logIndex]
+				// storage index is logIndex - 1 because r.log has dummy entry at 0
+				if err := r.storage.TruncateLog(logIndex - 1); err != nil {
+					fmt.Printf("Error truncating log: %v\n", err)
+				}
 				break
 			}
 		}
 	}
 	//4. Append any new entries not already in the log
+	var newEntries []LogEntry
 	for i, entry := range args.Entries {
 		logIndex := args.PrevLogIndex + 1 + i
 		if len(r.log) <= logIndex {
 			r.log = append(r.log, entry)
+			newEntries = append(newEntries, entry)
+		}
+	}
+	if len(newEntries) > 0 {
+		if err := r.storage.AppendEntries(newEntries); err != nil {
+			fmt.Printf("Error appending entries: %v\n", err)
 		}
 	}
 	//5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)

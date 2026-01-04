@@ -11,14 +11,15 @@ import (
 const (
 	MINELECTION_TIMEOUT   = 150 * time.Millisecond
 	MAXELECTION_TIMEOUT   = 300 * time.Millisecond
-	COMMUNICATION_LATENCY = 50 * time.Millisecond
-	AFTER_START_DELAY     = 50 * time.Millisecond
-	HEARTBEAT_INTERVAL    = 30 * time.Millisecond
+	COMMUNICATION_LATENCY = 100 * time.Millisecond
+	AFTER_START_DELAY     = 1000 * time.Millisecond
+	HEARTBEAT_INTERVAL    = 10 * time.Millisecond
 )
 
 func (r *Raft) Run() {
 	time.Sleep(AFTER_START_DELAY) //wait for connections to establish
 	r.dialRPCToAllPeers()
+	time.Sleep(AFTER_START_DELAY) //wait for connections to establish
 	for {
 		state := r.state
 		switch state {
@@ -119,6 +120,7 @@ func (r *Raft) startElection() {
 	r.state = CANDIDATE
 	r.currentTerm++
 	r.votedFor = r.me
+	r.persistState()
 	termBeforeRPC := r.currentTerm
 	var cnt int32 = 1 //vote for self already
 	ids := make([]int, 0, r.clusterSize)
