@@ -37,6 +37,11 @@ func (c *Client) randomValue() string {
 func (c *Client) createRandomCommand() []byte {
 	op := c.randomOperation()
 	key := c.randomKey()
+	if op == "GET" && c.internalState[key] == "" {
+		value := c.randomValue() 
+		commandString := fmt.Sprintf("SET %s %s", key, value)
+		return []byte(commandString)
+	}
 	if op == "SET" {
 		value := c.randomValue()
 		commandString := fmt.Sprintf("%s %s %s", op, key, value)
@@ -60,6 +65,30 @@ func (c *Client) updateInternalState(command []byte) {
 	}
 }
 
+func (c *Client)validateResponse(command []byte, resp Response) bool {
+	cmdStr := string(command)
+	var key, value string
+
+	if len(cmdStr) >= 3 && cmdStr[:3] == "SET" {
+		fmt.Sscanf(cmdStr, "SET %s %s", &key, &value)
+		storedValue, exists := c.internalState[key]
+		return exists && storedValue == value && resp.success
+	} else if len(cmdStr) >= 3 && cmdStr[:3] == "GET" {
+		fmt.Sscanf(cmdStr, "GET %s", &key)
+		storedValue, exists := c.internalState[key]
+		if exists {
+			return resp.success && resp.value == storedValue
+		} else {
+			return !resp.success
+		}
+	} else if len(cmdStr) >= 6 && cmdStr[:6] == "DELETE" {
+		fmt.Sscanf(cmdStr, "DELETE %s", &key)
+		_, exists := c.internalState[key]
+		return !exists && resp.success
+	}
+	return false
+}
+
 func (r *Raft) internalClient() {
 	client := &Client{
 		internalState: make(map[string]string),
@@ -76,7 +105,10 @@ func (r *Raft) internalClient() {
 
 			if resp.success {
 				client.updateInternalState(command)
-				fmt.Println("Client executed command:", string(command), "time:" ,end)
+				if ok := client.validateResponse(command, resp); !ok {
+				}else{
+					fmt.Println("Client command succeeded in", end, "for command:", string(command))
+				}
 			} else {
 				fmt.Println("Client command failed:", string(command))
 			}
