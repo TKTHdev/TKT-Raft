@@ -2,7 +2,7 @@ package main
 
 func (r *Raft) handleClientRequest() {
 	for {
-		command := <-r.ClientCh
+		command := <-r.ReqCh
 		r.appendToLog(command)
 	}
 }

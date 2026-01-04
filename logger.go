@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	//"log"
 	"sort"
 )
 
@@ -20,6 +20,7 @@ const (
 )
 
 func (r *Raft) logPut(msg string, colour int) {
+	/*
 	colors := map[int]string{
 		BLUE:    "\033[34m",
 		GREEN:   "\033[32m",
@@ -49,6 +50,7 @@ func (r *Raft) logPut(msg string, colour int) {
 	}
 	logPrefix := fmt.Sprintf("[Node %d | Term %d | SM %s | Role %s | VotedFor %d] ", r.me, r.currentTerm, r.printStateMachineAsString(), stateStr, r.votedFor)
 	log.Printf("%s%s%s", color, logPrefix+msg, reset)
+	*/
 }
 
 func (r *Raft) printLogEntriesAsString() string {

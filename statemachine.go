@@ -1,5 +1,9 @@
 package main
 
+import(
+	"fmt"
+)
+
 func (r *Raft) applyCommand(command []byte) {
 	commandStr := string(command)
 	parts := splitCommand(commandStr)
@@ -31,6 +35,22 @@ func (r *Raft) applyCommand(command []byte) {
 	default:
 		// Unknown command
 	}
+	Response := Response{
+		success: true,
+	}
+	if parts[0] == "GET" && len(parts) == 2 {
+		key := parts[1]
+		value, exists := r.StateMachine[key]
+		if exists {
+			Response.value = value
+		} else {
+			Response.success = true
+		}
+	}
+	if r.state == LEADER {
+		r.RespCh <- Response
+	}
+	r.logPut(fmt.Sprintf("State Machine after applying command: %s", r.printStateMachineAsString()), GREEN)
 }
 
 func splitCommand(command string) []string {

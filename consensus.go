@@ -12,7 +12,7 @@ const (
 	MINELECTION_TIMEOUT   = 1000 * time.Millisecond
 	MAXELECTION_TIMEOUT   = 2000 * time.Millisecond
 	COMMUNICATION_LATENCY = 500 * time.Millisecond
-	AFTER_START_DELAY      = 500 * time.Millisecond
+	AFTER_START_DELAY     = 500 * time.Millisecond
 )
 
 func (r *Raft) Run() {
@@ -61,14 +61,14 @@ func (r *Raft) doLeader() error {
 			go r.sendAppendEntries(id)
 		}
 	}
-	time.Sleep(COMMUNICATION_LATENCY)
-	//if matchIndex updated, try to commit entries
 	r.updateCommitIndex()
 	r.updateStateMachine()
 	return nil
 }
 
 func (r *Raft) updateCommitIndex() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for i := r.commitIndex + 1; i < len(r.log); i++ {
 		var cnt int32 = 1 //count self
 		for peerID, matchIdx := range r.matchIndex {
@@ -108,6 +108,8 @@ func (r *Raft) startElection() {
 	}
 	for _, id := range ids {
 		go func(target int) {
+			r.mu.Lock()
+			defer r.mu.Unlock()
 			msg := fmt.Sprintf("Requesting vote from node %d", target)
 			r.logPut(msg, MAGENTA)
 			if gotVoted := r.sendRequestVote(target); gotVoted {

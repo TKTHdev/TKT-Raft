@@ -8,10 +8,16 @@ import (
 
 const (
 	VALUE_MAX       = 1500
-	CLIENT_INTERVAL = 500 * time.Millisecond
 )
 
+type Response struct {
+	success bool
+	value   string
+}
+
 type Client struct {
+	sendCh        chan []byte
+	internalState map[string]string
 }
 
 func (c *Client) randomOperation() string {
@@ -41,17 +47,39 @@ func (c *Client) createRandomCommand() []byte {
 	}
 }
 
-func (c *Client) sendClientRequest(ch chan []byte) {
-	command := c.createRandomCommand()
-	ch <- command
+func (c *Client) updateInternalState(command []byte) {
+	cmdStr := string(command)
+	var key, value string
+
+	if len(cmdStr) >= 3 && cmdStr[:3] == "SET" {
+		fmt.Sscanf(cmdStr, "SET %s %s", &key, &value)
+		c.internalState[key] = value
+	} else if len(cmdStr) >= 6 && cmdStr[:6] == "DELETE" {
+		fmt.Sscanf(cmdStr, "DELETE %s", &key)
+		delete(c.internalState, key)
+	}
 }
 
 func (r *Raft) internalClient() {
-	client := &Client{}
+	client := &Client{
+		internalState: make(map[string]string),
+	}
+
 	for {
 		if r.state == LEADER {
-			client.sendClientRequest(r.ClientCh)
-			time.Sleep(CLIENT_INTERVAL)
+			command := client.createRandomCommand()
+			
+			r.ReqCh <- command
+			start := time.Now()
+			resp := <-r.RespCh
+			end := time.Since(start)
+
+			if resp.success {
+				client.updateInternalState(command)
+				fmt.Println("Client executed command:", string(command), "time:" ,end)
+			} else {
+				fmt.Println("Client command failed:", string(command))
+			}
 		}
 	}
 }

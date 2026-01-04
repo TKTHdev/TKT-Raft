@@ -32,7 +32,8 @@ type Raft struct {
 	clusterSize    int32
 	StateMachineCh chan []byte
 	StateMachine   map[string]string
-	ClientCh       chan []byte
+	ReqCh          chan []byte
+	RespCh         chan Response
 	mu             sync.RWMutex
 	peerIPPort     map[int]string
 }
@@ -54,7 +55,8 @@ func NewRaft(id int, confPath string) *Raft {
 		clusterSize:    int32(len(peerIPPort)),
 		StateMachineCh: make(chan []byte),
 		StateMachine:   make(map[string]string),
-		ClientCh:       make(chan []byte),
+		ReqCh:       make(chan []byte),
+		RespCh:       make(chan Response),
 		mu:             sync.RWMutex{},
 		peerIPPort:     peerIPPort,
 	}
