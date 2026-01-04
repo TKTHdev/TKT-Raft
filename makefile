@@ -74,5 +74,5 @@ clean:
 		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 		bin="$(BINARY_NAME)_$$id"; \
 		echo "[$$ip] Cleaning $$bin..."; \
-		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && rm $$bin || echo 'Binary not existing' && rm logs/node_$$id.ans || echo 'Log not existing'" & \
+		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && rm $$bin || echo 'Binary not existing' && rm logs/node_$$id.ans || echo 'Log not existing' && rm *.bin || echo 'Raft log not existing'" & \
 	done; wait
