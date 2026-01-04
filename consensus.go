@@ -56,28 +56,63 @@ func (r *Raft) doLeader() error {
 	for id := range r.rpcConns {
 		ids = append(ids, id)
 	}
+
+	r.mu.Lock()
 	for _, id := range ids {
 		if id != r.me {
-			msg := fmt.Sprintf("Sending heartbeat to node %d", id)
-			r.logPut(msg, WHITE)
-			go r.sendAppendEntries(id)
+			if !r.replicating[id] {
+				r.replicating[id] = true
+				go func(target int) {
+					msg := fmt.Sprintf("Sending heartbeat/appendEntries to node %d", target)
+					r.logPut(msg, WHITE)
+					r.sendAppendEntries(target)
+
+					r.mu.Lock()
+					delete(r.replicating, target)
+					r.mu.Unlock()
+				}(id)
+			}
 		}
 	}
-	time.Sleep(HEARTBEAT_INTERVAL)
+	r.mu.Unlock()
+
+	select {
+	case <-r.newLogEntryCh:
+	case <-time.After(HEARTBEAT_INTERVAL):
+	}
+
 	return nil
 }
 
 func (r *Raft) runApplier() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	for {
-		time.Sleep(5 * time.Millisecond)
-		r.updateCommitIndex()
-		r.updateStateMachine()
+		for r.lastApplied >= r.commitIndex {
+			r.commitCond.Wait()
+		}
+
+		startIdx := r.lastApplied + 1
+		endIdx := r.commitIndex
+		entries := make([]LogEntry, endIdx-startIdx+1)
+		copy(entries, r.log[startIdx:endIdx+1])
+
+		r.mu.Unlock()
+
+		for i, entry := range entries {
+			idx := startIdx + i
+			r.applyCommand(entry.Command, idx)
+			logMsg := fmt.Sprintf("Applied log entry %d to state machine: %s", idx, string(entry.Command))
+			r.logPut(logMsg, ORANGE)
+		}
+
+		r.mu.Lock()
+		r.lastApplied = endIdx
 	}
 }
 
 func (r *Raft) updateCommitIndex() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.state != LEADER {
 		return
 	}
@@ -90,29 +125,8 @@ func (r *Raft) updateCommitIndex() {
 		}
 		if atomic.LoadInt32(&cnt) > r.clusterSize/2 {
 			r.commitIndex = i
+			r.commitCond.Broadcast()
 		}
-	}
-}
-
-func (r *Raft) updateStateMachine() {
-	for {
-		r.mu.Lock()
-		if r.lastApplied >= r.commitIndex {
-			r.mu.Unlock()
-			return
-		}
-		idx := r.lastApplied + 1
-		entry := r.log[idx]
-		r.mu.Unlock()
-
-		//apply to state machine
-		r.applyCommand(entry.Command, idx)
-		logMsg := fmt.Sprintf("Applied log entry %d to state machine: %s", idx, string(entry.Command))
-		r.logPut(logMsg, ORANGE)
-
-		r.mu.Lock()
-		r.lastApplied = idx
-		r.mu.Unlock()
 	}
 }
 

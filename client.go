@@ -10,9 +10,9 @@ import (
 
 const (
 	VALUE_MAX = 1500
-	WORKERS   = 16
+	WORKERS   = 384
 	CLIENT_START = 4000 * time.Millisecond
-	EXPERIMENT_DURATION = 5000 * time.Millisecond
+	EXPERIMENT_DURATION = 10000 * time.Millisecond
 )
 
 type Response struct {

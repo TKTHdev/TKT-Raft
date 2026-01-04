@@ -101,6 +101,7 @@ func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply)
 		} else {
 			r.commitIndex = lastNewEntryIndex
 		}
+		r.commitCond.Broadcast()
 	}
 	reply.Term = r.currentTerm
 	reply.Success = true
@@ -190,6 +191,7 @@ func (r *Raft) sendAppendEntries(server int) bool {
 	if reply.Success {
 		r.nextIndex[server] = args.PrevLogIndex + len(args.Entries) + 1
 		r.matchIndex[server] = r.nextIndex[server] - 1
+		r.updateCommitIndex()
 	} else {
 		r.nextIndex[server] = max(1, r.nextIndex[server]-1)
 	}
