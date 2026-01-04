@@ -68,5 +68,6 @@ func NewRaft(id int, confPath string) *Raft {
 	go r.listenRPC(peerIPPort)
 	go r.internalClient()
 	go r.handleClientRequest()
+	go r.runApplier()
 	return r
 }

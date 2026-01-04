@@ -13,6 +13,7 @@ const (
 	MAXELECTION_TIMEOUT   = 300 * time.Millisecond
 	COMMUNICATION_LATENCY = 50 * time.Millisecond
 	AFTER_START_DELAY     = 50 * time.Millisecond
+	HEARTBEAT_INTERVAL    = 30 * time.Millisecond
 )
 
 func (r *Raft) Run() {
@@ -61,15 +62,24 @@ func (r *Raft) doLeader() error {
 			go r.sendAppendEntries(id)
 		}
 	}
-	r.updateCommitIndex()
-	r.updateStateMachine()
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(HEARTBEAT_INTERVAL)
 	return nil
+}
+
+func (r *Raft) runApplier() {
+	for {
+		time.Sleep(10 * time.Millisecond)
+		r.updateCommitIndex()
+		r.updateStateMachine()
+	}
 }
 
 func (r *Raft) updateCommitIndex() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.state != LEADER {
+		return
+	}
 	for i := r.commitIndex + 1; i < len(r.log); i++ {
 		var cnt int32 = 1 //count self
 		for peerID, matchIdx := range r.matchIndex {
@@ -84,14 +94,24 @@ func (r *Raft) updateCommitIndex() {
 }
 
 func (r *Raft) updateStateMachine() {
-	for r.lastApplied < r.commitIndex {
-		r.lastApplied++
-		entry := r.log[r.lastApplied]
+	for {
+		r.mu.Lock()
+		if r.lastApplied >= r.commitIndex {
+			r.mu.Unlock()
+			return
+		}
+		idx := r.lastApplied + 1
+		entry := r.log[idx]
+		r.mu.Unlock()
+
 		//apply to state machine
 		r.applyCommand(entry.Command)
-		logMsg := fmt.Sprintf("Applied log entry %d to state machine: %s", r.lastApplied, string(entry.Command))
+		logMsg := fmt.Sprintf("Applied log entry %d to state machine: %s", idx, string(entry.Command))
 		r.logPut(logMsg, ORANGE)
 
+		r.mu.Lock()
+		r.lastApplied = idx
+		r.mu.Unlock()
 	}
 }
 

@@ -93,7 +93,6 @@ func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply)
 	reply.Term = r.currentTerm
 	reply.Success = true
 	r.heartBeatCh <- true
-	r.updateStateMachine()
 	return nil
 }
 
