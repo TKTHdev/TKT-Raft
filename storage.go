@@ -106,20 +106,30 @@ func (s *Storage) AppendEntry(entry LogEntry) error {
 }
 
 func (s *Storage) AppendEntries(entries []LogEntry) error {
-	for _, entry := range entries {
-		_, err := s.logFile.Seek(0, io.SeekEnd)
-		if err != nil {
-			return err
-		}
-		s.logWriter.Flush()
-		currentOffset, _ := s.logFile.Seek(0, io.SeekEnd)
+	if err := s.logWriter.Flush(); err != nil {
+		return err
+	}
+	currentOffset, err := s.logFile.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
+	}
 
+	for _, entry := range entries {
 		s.logOffsets = append(s.logOffsets, currentOffset)
 
-		binary.Write(s.logWriter, binary.LittleEndian, int64(entry.Term))
+		if err := binary.Write(s.logWriter, binary.LittleEndian, int64(entry.Term)); err != nil {
+			return err
+		}
 		cmdLen := int64(len(entry.Command))
-		binary.Write(s.logWriter, binary.LittleEndian, cmdLen)
-		s.logWriter.Write(entry.Command)
+		if err := binary.Write(s.logWriter, binary.LittleEndian, cmdLen); err != nil {
+			return err
+		}
+		if _, err := s.logWriter.Write(entry.Command); err != nil {
+			return err
+		}
+
+		// Term(8) + CmdLen(8) + Command(len)
+		currentOffset += 16 + int64(len(entry.Command))
 	}
 	if err := s.logWriter.Flush(); err != nil {
 		return err

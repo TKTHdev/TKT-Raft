@@ -43,6 +43,9 @@ type Raft struct {
 	mu               sync.RWMutex
 	peerIPPort       map[int]string
 	storage          *Storage
+	commitCond       *sync.Cond
+	replicating      map[int]bool
+	newLogEntryCh    chan bool
 }
 
 func NewRaft(id int, confPath string) *Raft {
@@ -83,7 +86,10 @@ func NewRaft(id int, confPath string) *Raft {
 		mu:               sync.RWMutex{},
 		peerIPPort:       peerIPPort,
 		storage:          storage,
+		replicating:      make(map[int]bool),
+		newLogEntryCh:    make(chan bool, 1),
 	}
+	r.commitCond = sync.NewCond(&r.mu)
 	for peerID, _ := range peerIPPort {
 		r.nextIndex[peerID] = len(fullLog)
 		r.matchIndex[peerID] = 0
