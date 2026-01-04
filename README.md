@@ -11,10 +11,6 @@
     - Safety (term, commit index, etc.)
 - What are not implemented
     - Linearizable Read
-    - Persistent State
-        - Term
-        - Log
-        - VotedFor
 
 
 ### Raft Node Overview
@@ -156,7 +152,6 @@ The entry point is the CLI command defined in `init.go`, utilizing `urfave/cli`.
 4.  **Internal-Only Client:** External applications cannot interact with the cluster. The `client` logic is hardcoded within the server binary.
 5.  **Basic Error Handling:** Network errors are logged, but complex recovery scenarios or backoff strategies might be minimal.
 6.  **TODOs (Inferred):**
-    *   Implement persistent storage (WAL).
     *   Add an external API (HTTP/gRPC) for client interaction.
     *   Implement log compaction/snapshots.
     *   Add formal unit tests.
