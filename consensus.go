@@ -12,10 +12,11 @@ const (
 	MINELECTION_TIMEOUT   = 1000 * time.Millisecond
 	MAXELECTION_TIMEOUT   = 2000 * time.Millisecond
 	COMMUNICATION_LATENCY = 500 * time.Millisecond
+	AFTER_START_DELAY      = 500 * time.Millisecond
 )
 
 func (r *Raft) Run() {
-	time.Sleep(500 * time.Millisecond) //wait for connections to establish
+	time.Sleep(AFTER_START_DELAY) //wait for connections to establish
 	r.dialRPCToAllPeers()
 	for {
 		state := r.state
@@ -107,7 +108,6 @@ func (r *Raft) startElection() {
 	}
 	for _, id := range ids {
 		go func(target int) {
-			r.mu.Lock()
 			msg := fmt.Sprintf("Requesting vote from node %d", target)
 			r.logPut(msg, MAGENTA)
 			if gotVoted := r.sendRequestVote(target); gotVoted {
@@ -115,7 +115,6 @@ func (r *Raft) startElection() {
 				r.logPut(msg, CYAN)
 				atomic.AddInt32(&cnt, 1)
 			}
-			r.mu.Unlock()
 		}(id)
 	}
 	time.Sleep(COMMUNICATION_LATENCY)
