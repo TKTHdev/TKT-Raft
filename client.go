@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	VALUE_MAX = 1500
-	CLIENT_START = 4000 * time.Millisecond
+	VALUE_MAX           = 1500
+	CLIENT_START        = 4000 * time.Millisecond
 	EXPERIMENT_DURATION = 10000 * time.Millisecond
 )
 
@@ -156,11 +156,11 @@ func concClientWorker(r *Raft) (int, error) {
 	}
 	ticker := time.NewTicker(EXPERIMENT_DURATION)
 	cnt := 0
-	for{
+	for {
 		select {
 		case <-ticker.C:
-			return cnt ,nil
-		default:	
+			return cnt, nil
+		default:
 		}
 		if r.state == LEADER {
 			command := client.createRandomCommand()
