@@ -9,9 +9,8 @@ import (
 )
 
 const (
-	VALUE_MAX = 1500
-	WORKERS   = 384
-	CLIENT_START = 4000 * time.Millisecond
+	VALUE_MAX           = 1500
+	CLIENT_START        = 4000 * time.Millisecond
 	EXPERIMENT_DURATION = 10000 * time.Millisecond
 )
 
@@ -132,8 +131,8 @@ func (r *Raft) concClient() {
 	if r.state != LEADER {
 		return
 	}
-	p := pool.NewWithResults[int]().WithErrors().WithMaxGoroutines(WORKERS)
-	for i := 0; i < WORKERS; i++ {
+	p := pool.NewWithResults[int]().WithErrors().WithMaxGoroutines(r.workers)
+	for i := 0; i < r.workers; i++ {
 		p.Go(func() (int, error) { return concClientWorker(r) })
 	}
 	results, err := p.Wait()
@@ -157,11 +156,11 @@ func concClientWorker(r *Raft) (int, error) {
 	}
 	ticker := time.NewTicker(EXPERIMENT_DURATION)
 	cnt := 0
-	for{
+	for {
 		select {
 		case <-ticker.C:
-			return cnt ,nil
-		default:	
+			return cnt, nil
+		default:
 		}
 		if r.state == LEADER {
 			command := client.createRandomCommand()
