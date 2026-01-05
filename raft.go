@@ -46,9 +46,11 @@ type Raft struct {
 	commitCond       *sync.Cond
 	replicating      map[int]bool
 	newLogEntryCh    chan bool
+	batchSize        int
+	workers          int
 }
 
-func NewRaft(id int, confPath string) *Raft {
+func NewRaft(id int, confPath string, batchSize int, workers int) *Raft {
 	peerIPPort := parseConfig(confPath)
 	storage, err := NewStorage(id)
 	if err != nil {
@@ -88,6 +90,8 @@ func NewRaft(id int, confPath string) *Raft {
 		storage:          storage,
 		replicating:      make(map[int]bool),
 		newLogEntryCh:    make(chan bool, 1),
+		batchSize:        batchSize,
+		workers:          workers,
 	}
 	r.commitCond = sync.NewCond(&r.mu)
 	for peerID, _ := range peerIPPort {
