@@ -134,6 +134,7 @@ func (s *Storage) AppendEntries(entries []LogEntry) error {
 	if err := s.logWriter.Flush(); err != nil {
 		return err
 	}
+	//return nil
 	return s.logFile.Sync()
 }
 

@@ -12,54 +12,64 @@ else
     IDS := $(TARGET_ID)
 endif
 
+DEBUG ?= false
+DEBUG_FLAG :=
+ifeq ($(DEBUG),true)
+    DEBUG_FLAG := --debug
+endif
+
 ARGS ?=
 
-.PHONY: help deploy build send-bin start kill benchmark
+.PHONY: help deploy build send-bin start kill clean benchmark
+
+help:
+	@echo "Usage: make [target] [TARGET_ID=id] [DEBUG=true]"
+	@echo "Targets: deploy, build, send-bin, start, kill, clean, benchmark"
 
 deploy:
 	@for id in $(IDS); do \
-	   ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-	   echo "[$$ip] Distributing config..."; \
-	   scp $(CONFIG_FILE) $(USER)@$$ip:$(PROJECT_DIR)/$(notdir $(CONFIG_FILE)) & \
+		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+		echo "[$$ip] Distributing config..."; \
+		scp $(CONFIG_FILE) $(USER)@$$ip:$(PROJECT_DIR)/$(notdir $(CONFIG_FILE)) & \
 	done; wait
 
 build:
 	@for id in $(IDS); do \
-	   ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-	   bin="$(BINARY_NAME)_$$id"; \
-	   echo "[$$ip] Building $$bin..."; \
-	   ssh $(USER)@$$ip "cd $(PROJECT_DIR) && go build -o $$bin" & \
+		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+		bin="$(BINARY_NAME)_$$id"; \
+		echo "[$$ip] Building $$bin..."; \
+		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && go build -o $$bin" & \
 	done; wait
 
 send-bin:
-	GOOS=linux GOARCH=amd64 go build -o /tmp/raft_tmp ..
+	GOOS=linux GOARCH=amd64 go build -o /tmp/raft_tmp .
 	@for id in $(IDS); do \
-	   ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-	   bin="$(BINARY_NAME)_$$id"; \
-	   echo "[$$ip] Sending $$bin..."; \
-	   scp /tmp/raft_tmp $(USER)@$$ip:$(PROJECT_DIR)/$$bin && \
-	   ssh $(USER)@$$ip "chmod +x $(PROJECT_DIR)/$$bin" & \
+		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+		bin="$(BINARY_NAME)_$$id"; \
+		echo "[$$ip] Sending $$bin..."; \
+		scp /tmp/raft_tmp $(USER)@$$ip:$(PROJECT_DIR)/$$bin && \
+		ssh $(USER)@$$ip "chmod +x $(PROJECT_DIR)/$$bin" & \
 	done; wait
 	@rm /tmp/raft_tmp
 
 start:
 	@for id in $(IDS); do \
-	   ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-	   bin="$(BINARY_NAME)_$$id"; \
-	   echo "[$$ip] Starting $$bin (ID: $$id)..."; \
-	   ssh -n -f $(USER)@$$ip "mkdir -p $(LOG_DIR) && cd $(PROJECT_DIR) && \
-	      (pkill -x $$bin || true) && \
-	      sleep 0.5 && \
-	      nohup ./$$bin start --id $$id --conf cluster.conf $(ARGS) > $(LOG_DIR)/node_$$id.ans 2>&1 < /dev/null &"; \
+		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+		bin="$(BINARY_NAME)_$$id"; \
+		echo "[$$ip] Starting $$bin (ID: $$id)..."; \
+		ssh -n -f $(USER)@$$ip "mkdir -p $(LOG_DIR) && cd $(PROJECT_DIR) && \
+		   (pkill -x $$bin || true) && \
+		   sleep 0.5 && \
+		   nohup ./$$bin start --id $$id --conf cluster.conf $(ARGS) $(DEBUG_FLAG) > $(LOG_DIR)/node_$$id.ans 2>&1 < /dev/null &"; \
 	done
 	@echo "All start commands initiated."
 
 kill:
 	@for id in $(IDS); do \
-	   ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-	   bin="$(BINARY_NAME)_$$id"; \
-	   echo "[$$ip] Killing $$bin..."; \
-	   ssh $(USER)@$$ip "pkill -x $$bin || echo 'Not running.'" & \
+		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+		bin="$(BINARY_NAME)_$$id"; \
+		echo "[$$ip] Killing $$bin..."; \
+		ssh $(USER)@$$ip "pkill -x $$bin || echo 'Not running.'" & \
 	done; wait
 
 clean:
@@ -67,21 +77,30 @@ clean:
 		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 		bin="$(BINARY_NAME)_$$id"; \
 		echo "[$$ip] Cleaning $$bin..."; \
-		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && rm $$bin || echo 'Binary not existing' && rm logs/node_$$id.ans || echo 'Log not existing' && rm *.bin || echo 'Raft log not existing'" & \
+		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && rm -f $$bin logs/node_$$id.ans *.bin" & \
 	done; wait
 
 benchmark:
 	@mkdir -p results
 	@echo "Starting benchmark..." > results/benchmark.log
-	@for batch in 32 64; do \
-		for workers in 256; do \
+	@for batch in 1 2 4 8 16 32; do \
+		for workers in 1 2 4 8 16 32; do \
 			echo "Running benchmark: Batch=$$batch, Workers=$$workers"; \
+			for id in $(IDS); do \
+				ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+				ssh -n $(USER)@$$ip "rm $(LOG_DIR)/node_$$id.ans"; \
+				ssh -n $(USER)@$$ip "cd $(PROJECT_DIR) && rm raft_log_$$id.bin"; \
+				ssh -n $(USER)@$$ip "cd $(PROJECT_DIR) && rm raft_state_$$id.bin"; \
+			done; \
 			$(MAKE) kill; \
 			sleep 2; \
 			$(MAKE) start ARGS="--batch-size $$batch --workers $$workers"; \
 			sleep 20; \
 			echo "--- Results for Batch=$$batch, Workers=$$workers ---" >> results/benchmark.log; \
-			grep "ConcClient throughput" $(LOG_DIR)/*.ans >> results/benchmark.log || echo "No throughput data found" >> results/benchmark.log; \
+			for id in $(IDS); do \
+				ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+				ssh -n $(USER)@$$ip "tail -n 10 $(LOG_DIR)/node_$$id.ans" >> results/benchmark.log; \
+			done; \
 		done; \
 	done
 	@$(MAKE) kill

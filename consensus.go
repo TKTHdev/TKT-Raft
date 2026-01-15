@@ -10,7 +10,7 @@ import (
 
 const (
 	MINELECTION_TIMEOUT   = 150 * time.Millisecond
-	MAXELECTION_TIMEOUT   = 300 * time.Millisecond
+	MAXELECTION_TIMEOUT   = 1000 * time.Millisecond
 	COMMUNICATION_LATENCY = 100 * time.Millisecond
 	AFTER_START_DELAY     = 1000 * time.Millisecond
 	HEARTBEAT_INTERVAL    = 10 * time.Millisecond

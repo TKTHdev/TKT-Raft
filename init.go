@@ -19,7 +19,8 @@ func main() {
 					conf := c.String("conf")
 					batchSize := c.Int("batch-size")
 					workers := c.Int("workers")
-					r := NewRaft(id, conf, batchSize, workers)
+					debug := c.Bool("debug")
+					r := NewRaft(id, conf, batchSize, workers, debug)
 					r.Run()
 					return nil
 				},
@@ -41,6 +42,11 @@ func main() {
 						Name:  "workers",
 						Usage: "Number of concurrent clients",
 						Value: 256,
+					},
+					&cli.BoolFlag{
+						Name:  "debug",
+						Usage: "Enable debug logging",
+						Value: false,
 					},
 				},
 			},
