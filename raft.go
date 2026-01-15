@@ -49,9 +49,10 @@ type Raft struct {
 	batchSize        int
 	workers          int
 	debug            bool
+	workload         int
 }
 
-func NewRaft(id int, confPath string, batchSize int, workers int, debug bool) *Raft {
+func NewRaft(id int, confPath string, batchSize int, workers int, debug bool, workload int) *Raft {
 	peerIPPort := parseConfig(confPath)
 	storage, err := NewStorage(id)
 	if err != nil {

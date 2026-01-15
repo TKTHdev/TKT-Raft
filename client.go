@@ -50,19 +50,6 @@ func (c *Client) createYCSBCommand(writeRatio int) []byte {
 	}
 }
 
-func (c *Client) updateInternalState(command []byte) {
-	cmdStr := string(command)
-	var key, value string
-
-	if len(cmdStr) >= 3 && cmdStr[:3] == "SET" {
-		fmt.Sscanf(cmdStr, "SET %s %s", &key, &value)
-		c.internalState[key] = value
-	} else if len(cmdStr) >= 6 && cmdStr[:6] == "DELETE" {
-		fmt.Sscanf(cmdStr, "DELETE %s", &key)
-		delete(c.internalState, key)
-	}
-}
-
 func (c *Client) validateResponse(command []byte, resp Response) bool {
 	cmdStr := string(command)
 	var key, value string

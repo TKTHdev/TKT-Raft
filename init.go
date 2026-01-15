@@ -20,7 +20,8 @@ func main() {
 					batchSize := c.Int("batch-size")
 					workers := c.Int("workers")
 					debug := c.Bool("debug")
-					r := NewRaft(id, conf, batchSize, workers, debug)
+					workload := c.Int("workload")
+					r := NewRaft(id, conf, batchSize, workers, debug, workload)
 					r.Run()
 					return nil
 				},
