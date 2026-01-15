@@ -20,7 +20,17 @@ func main() {
 					batchSize := c.Int("batch-size")
 					workers := c.Int("workers")
 					debug := c.Bool("debug")
-					r := NewRaft(id, conf, batchSize, workers, debug)
+					workloadStr := c.String("workload")
+					workload := 50
+					switch workloadStr {
+					case "ycsb-a":
+						workload = 50
+					case "ycsb-b":
+						workload = 5
+					case "ycsb-c":
+						workload = 0
+					}
+					r := NewRaft(id, conf, batchSize, workers, debug, workload)
 					r.Run()
 					return nil
 				},
@@ -47,6 +57,11 @@ func main() {
 						Name:  "debug",
 						Usage: "Enable debug logging",
 						Value: false,
+					},
+					&cli.StringFlag{
+						Name:  "workload",
+						Usage: "Workload type (ycsb-a, ycsb-b, ycsb-c)",
+						Value: "ycsb-a",
 					},
 				},
 			},

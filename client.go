@@ -1,17 +1,20 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"github.com/sourcegraph/conc/pool"
 	"math/rand"
 	"time"
-	"context"
-	"github.com/sourcegraph/conc/pool"
 )
 
 const (
 	VALUE_MAX           = 1500
 	CLIENT_START        = 4000 * time.Millisecond
 	EXPERIMENT_DURATION = 10000 * time.Millisecond
+	YCSB_A              = 50
+	YCSB_B              = 5
+	YCSB_C              = 0
 )
 
 type Response struct {
@@ -24,11 +27,6 @@ type Client struct {
 	internalState map[string]string
 }
 
-func (c *Client) randomOperation() string {
-	operations := []string{"SET", "GET", "DELETE"}
-	return operations[rand.Intn(len(operations))]
-}
-
 func (c *Client) randomKey() string {
 	keys := []string{"x", "y", "z", "a", "b", "c"}
 	return keys[rand.Intn(len(keys))]
@@ -38,34 +36,17 @@ func (c *Client) randomValue() string {
 	return fmt.Sprintf("value%d", rand.Intn(VALUE_MAX))
 }
 
-func (c *Client) createRandomCommand() []byte {
-	op := c.randomOperation()
-	key := c.randomKey()
-	if op == "GET" && c.internalState[key] == "" {
+func (c *Client) createYCSBCommand(writeRatio int) []byte {
+	opRand := rand.Intn(100)
+	if opRand < writeRatio {
+		key := c.randomKey()
 		value := c.randomValue()
 		commandString := fmt.Sprintf("SET %s %s", key, value)
 		return []byte(commandString)
-	}
-	if op == "SET" {
-		value := c.randomValue()
-		commandString := fmt.Sprintf("%s %s %s", op, key, value)
-		return []byte(commandString)
 	} else {
-		commandString := fmt.Sprintf("%s %s", op, key)
+		key := c.randomKey()
+		commandString := fmt.Sprintf("GET %s", key)
 		return []byte(commandString)
-	}
-}
-
-func (c *Client) updateInternalState(command []byte) {
-	cmdStr := string(command)
-	var key, value string
-
-	if len(cmdStr) >= 3 && cmdStr[:3] == "SET" {
-		fmt.Sscanf(cmdStr, "SET %s %s", &key, &value)
-		c.internalState[key] = value
-	} else if len(cmdStr) >= 6 && cmdStr[:6] == "DELETE" {
-		fmt.Sscanf(cmdStr, "DELETE %s", &key)
-		delete(c.internalState, key)
 	}
 }
 
@@ -93,44 +74,11 @@ func (c *Client) validateResponse(command []byte, resp Response) bool {
 	return false
 }
 
-func (r *Raft) internalClient() {
-	client := &Client{
-		internalState: make(map[string]string),
-	}
-
-	for {
-		if r.state == LEADER {
-			command := client.createRandomCommand()
-			req := ClientRequest{
-				Command: command,
-				RespCh:  make(chan Response, 1),
-			}
-
-			r.ReqCh <- req
-			start := time.Now()
-			resp := <-req.RespCh
-			end := time.Since(start)
-
-			if resp.success {
-				client.updateInternalState(command)
-				if ok := client.validateResponse(command, resp); !ok {
-				} else {
-					fmt.Println("Client command succeeded in", end, "for command:", string(command))
-				}
-			} else {
-				fmt.Println("Client command failed:", string(command))
-			}
-		} else {
-			time.Sleep(100 * time.Millisecond)
-		}
-	}
-}
-
 func (r *Raft) concClient() {
 	for r.state != LEADER {
 	}
 	fmt.Println("ConcClient starting experiment...")
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), EXPERIMENT_DURATION)
 	defer cancel()
 
@@ -166,12 +114,12 @@ func concClientWorker(ctx context.Context, r *Raft) (int, error) {
 		}
 
 		if r.state == LEADER {
-			command := client.createRandomCommand()
+			command := client.createYCSBCommand(r.workload)
 			req := ClientRequest{
 				Command: command,
 				RespCh:  make(chan Response, 1),
 			}
-			
+
 			select {
 			case <-ctx.Done():
 				return cnt, nil

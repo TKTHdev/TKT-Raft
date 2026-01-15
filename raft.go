@@ -49,9 +49,10 @@ type Raft struct {
 	batchSize        int
 	workers          int
 	debug            bool
+	workload         int
 }
 
-func NewRaft(id int, confPath string, batchSize int, workers int, debug bool) *Raft {
+func NewRaft(id int, confPath string, batchSize int, workers int, debug bool, workload int) *Raft {
 	peerIPPort := parseConfig(confPath)
 	storage, err := NewStorage(id)
 	if err != nil {
@@ -94,6 +95,7 @@ func NewRaft(id int, confPath string, batchSize int, workers int, debug bool) *R
 		batchSize:        batchSize,
 		workers:          workers,
 		debug:            debug,
+		workload:         workload,
 	}
 	r.commitCond = sync.NewCond(&r.mu)
 	for peerID, _ := range peerIPPort {
