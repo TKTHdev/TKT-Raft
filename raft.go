@@ -95,6 +95,7 @@ func NewRaft(id int, confPath string, batchSize int, workers int, debug bool, wo
 		batchSize:        batchSize,
 		workers:          workers,
 		debug:            debug,
+		workload:         workload,
 	}
 	r.commitCond = sync.NewCond(&r.mu)
 	for peerID, _ := range peerIPPort {
