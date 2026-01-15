@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"sort"
-	//"log"
 )
 
 const (
@@ -20,37 +20,44 @@ const (
 )
 
 func (r *Raft) logPut(msg string, colour int) {
-		/*
-		colors := map[int]string{
-			BLUE:    "\033[34m",
-			GREEN:   "\033[32m",
-			RED:     "\033[31m",
-			YELLOW:  "\033[33m",
-			WHITE:   "\033[37m",
-			CYAN:    "\033[36m",
-			PURPLE:  "\033[35m",
-			MAGENTA: "\033[95m",
-		}
-		color, ok := colors[colour]
-		if !ok {
-			color = "\033[0m"
-		}
-		reset := "\033[0m"
-		//print Node ID, Term, State, leaderID, votedFor
-		stateStr := ""
-		switch r.state {
-		case LEADER:
-			stateStr = "LEADER"
-		case FOLLOWER:
-			stateStr = "FOLLOWER"
-		case CANDIDATE:
-			stateStr = "CANDIDATE"
-		default:
-			stateStr = "UNKNOWN"
-		}
-		logPrefix := fmt.Sprintf("[Node %d | Term %d | SM %s | Role %s | VotedFor %d] ", r.me, r.currentTerm, r.printStateMachineAsString(), stateStr, r.votedFor)
-		log.Printf("%s%s%s", color, logPrefix+msg, reset)
-		*/
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	r.logPutLocked(msg, colour)
+}
+
+func (r *Raft) logPutLocked(msg string, colour int) {
+	if !r.debug {
+		return
+	}
+	colors := map[int]string{
+		BLUE:    "\033[34m",
+		GREEN:   "\033[32m",
+		RED:     "\033[31m",
+		YELLOW:  "\033[33m",
+		WHITE:   "\033[37m",
+		CYAN:    "\033[36m",
+		PURPLE:  "\033[35m",
+		MAGENTA: "\033[95m",
+	}
+	color, ok := colors[colour]
+	if !ok {
+		color = "\033[0m"
+	}
+	reset := "\033[0m"
+	//print Node ID, Term, State, leaderID, votedFor
+	stateStr := ""
+	switch r.state {
+	case LEADER:
+		stateStr = "LEADER"
+	case FOLLOWER:
+		stateStr = "FOLLOWER"
+	case CANDIDATE:
+		stateStr = "CANDIDATE"
+	default:
+		stateStr = "UNKNOWN"
+	}
+	logPrefix := fmt.Sprintf("[Node %d | Term %d | SM %s | Role %s | VotedFor %d] ", r.me, r.currentTerm, r.printStateMachineAsStringLocked(), stateStr, r.votedFor)
+	log.Printf("%s%s%s", color, logPrefix+msg, reset)
 }
 
 func (r *Raft) printLogEntriesAsString() string {
@@ -65,7 +72,7 @@ func (r *Raft) printLogEntriesAsString() string {
 	return logStr
 }
 
-func (r *Raft) printStateMachineAsString() string {
+func (r *Raft) printStateMachineAsStringLocked() string {
 	smStr := "{"
 	keys := make([]string, 0, len(r.StateMachine))
 	for k := range r.StateMachine {

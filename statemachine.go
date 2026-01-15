@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 )
 
 func (r *Raft) applyCommand(command []byte, index int) {
@@ -15,29 +14,37 @@ func (r *Raft) applyCommand(command []byte, index int) {
 		if len(parts) != 3 {
 			return
 		}
+		r.mu.Lock()
 		key := parts[1]
 		value := parts[2]
 		r.StateMachine[key] = value
+		r.mu.Unlock()
 
 	case "GET":
 		if len(parts) != 2 {
 			return
 		}
+		r.mu.Lock()
 		key := parts[1]
 		_ = r.StateMachine[key] // In a real implementation, you might want to return this value.
+		r.mu.Unlock()
 	case "DELETE":
 		if len(parts) != 2 {
 			return
 		}
+		r.mu.Lock()
 		key := parts[1]
 
 		delete(r.StateMachine, key)
+		r.mu.Unlock()
 	default:
 		// Unknown command
 	}
 	Response := Response{
 		success: true,
 	}
+	
+	r.mu.Lock()
 	if parts[0] == "GET" && len(parts) == 2 {
 		key := parts[1]
 		value, exists := r.StateMachine[key]
@@ -48,7 +55,6 @@ func (r *Raft) applyCommand(command []byte, index int) {
 		}
 	}
 	if r.state == LEADER {
-		r.mu.Lock()
 		ch, ok := r.pendingResponses[index]
 		if ok {
 			delete(r.pendingResponses, index)
@@ -61,8 +67,10 @@ func (r *Raft) applyCommand(command []byte, index int) {
 			default:
 			}
 		}
+	} else {
+		r.mu.Unlock()
 	}
-	r.logPut(fmt.Sprintf("State Machine after applying command: %s", r.printStateMachineAsString()), GREEN)
+	r.logPut("State Machine after applying command", GREEN)
 }
 
 func splitCommand(command string) []string {

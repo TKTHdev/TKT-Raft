@@ -4,14 +4,13 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
-
+	"context"
 	"github.com/sourcegraph/conc/pool"
 )
 
 const (
-	VALUE_MAX = 1500
-	WORKERS   = 384
-	CLIENT_START = 4000 * time.Millisecond
+	VALUE_MAX           = 1500
+	CLIENT_START        = 4000 * time.Millisecond
 	EXPERIMENT_DURATION = 10000 * time.Millisecond
 )
 
@@ -128,13 +127,16 @@ func (r *Raft) internalClient() {
 }
 
 func (r *Raft) concClient() {
-	time.Sleep(CLIENT_START) //wait for connections to establish
-	if r.state != LEADER {
-		return
+	for r.state != LEADER {
 	}
-	p := pool.NewWithResults[int]().WithErrors().WithMaxGoroutines(WORKERS)
-	for i := 0; i < WORKERS; i++ {
-		p.Go(func() (int, error) { return concClientWorker(r) })
+	fmt.Println("ConcClient starting experiment...")
+	
+	ctx, cancel := context.WithTimeout(context.Background(), EXPERIMENT_DURATION)
+	defer cancel()
+
+	p := pool.NewWithResults[int]().WithErrors().WithMaxGoroutines(r.workers)
+	for i := 0; i < r.workers; i++ {
+		p.Go(func() (int, error) { return concClientWorker(ctx, r) })
 	}
 	results, err := p.Wait()
 	//cal throughput
@@ -151,32 +153,47 @@ func (r *Raft) concClient() {
 	fmt.Printf("ConcClient throughput: %.2f commands/second\n", throughput)
 }
 
-func concClientWorker(r *Raft) (int, error) {
+func concClientWorker(ctx context.Context, r *Raft) (int, error) {
 	client := &Client{
 		internalState: make(map[string]string),
 	}
-	ticker := time.NewTicker(EXPERIMENT_DURATION)
 	cnt := 0
-	for{
+	for {
 		select {
-		case <-ticker.C:
-			return cnt ,nil
-		default:	
+		case <-ctx.Done():
+			return cnt, nil
+		default:
 		}
+
 		if r.state == LEADER {
 			command := client.createRandomCommand()
 			req := ClientRequest{
 				Command: command,
 				RespCh:  make(chan Response, 1),
 			}
-			r.ReqCh <- req
-			resp := <-req.RespCh
+			
+			select {
+			case <-ctx.Done():
+				return cnt, nil
+			case r.ReqCh <- req:
+			}
 
-			if resp.success {
-				cnt += 1
-			} else {
-				fmt.Println("ConcClient command failed:", string(command))
-				return cnt, fmt.Errorf("command failed")
+			select {
+			case <-ctx.Done():
+				return cnt, nil
+			case resp := <-req.RespCh:
+				if resp.success {
+					cnt += 1
+				} else {
+					fmt.Println("ConcClient command failed:", string(command))
+					return cnt, fmt.Errorf("command failed")
+				}
+			}
+		} else {
+			select {
+			case <-ctx.Done():
+				return cnt, nil
+			case <-time.After(10 * time.Millisecond):
 			}
 		}
 	}

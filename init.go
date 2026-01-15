@@ -17,7 +17,10 @@ func main() {
 				Action: func(c *cli.Context) error {
 					id := c.Int("id")
 					conf := c.String("conf")
-					r := NewRaft(id, conf)
+					batchSize := c.Int("batch-size")
+					workers := c.Int("workers")
+					debug := c.Bool("debug")
+					r := NewRaft(id, conf, batchSize, workers, debug)
 					r.Run()
 					return nil
 				},
@@ -29,6 +32,21 @@ func main() {
 					&cli.StringFlag{
 						Name:  "conf",
 						Usage: "Path to config file",
+					},
+					&cli.IntFlag{
+						Name:  "batch-size",
+						Usage: "Raft disk batch size",
+						Value: 128,
+					},
+					&cli.IntFlag{
+						Name:  "workers",
+						Usage: "Number of concurrent clients",
+						Value: 256,
+					},
+					&cli.BoolFlag{
+						Name:  "debug",
+						Usage: "Enable debug logging",
+						Value: false,
 					},
 				},
 			},

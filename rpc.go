@@ -57,11 +57,13 @@ func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply)
 	if len(r.log) <= args.PrevLogIndex {
 		reply.Term = r.currentTerm
 		reply.Success = false
+		r.heartBeatCh <- true
 		return nil
 	}
 	if r.log[args.PrevLogIndex].Term != args.PrevLogTerm {
 		reply.Term = r.currentTerm
 		reply.Success = false
+		r.heartBeatCh <- true
 		return nil
 	}
 
@@ -112,7 +114,7 @@ func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply)
 func (r *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.logPut("Received RequestVote RPC", CYAN)
+	r.logPutLocked("Received RequestVote RPC", CYAN)
 	//0. If term > currentTerm, set currentTerm = term, convert to follower
 	//1. Reply false if term < currentTerm
 	if args.Term < r.currentTerm {
@@ -174,7 +176,7 @@ func (r *Raft) sendAppendEntries(server int) bool {
 	if err := client.Call(AppendEntries, args, reply); err != nil {
 		r.mu.Lock()
 		logMsg := fmt.Sprintf("Error sending AppendEntries RPC to node %d: %v", server, err)
-		r.logPut(logMsg, PURPLE)
+		r.logPutLocked(logMsg, PURPLE)
 		r.rpcConns[server] = nil
 		r.mu.Unlock()
 		r.dialRPCToPeer(server)
@@ -223,7 +225,7 @@ func (r *Raft) sendRequestVote(server int) bool {
 	if err := client.Call(RequestVote, args, reply); err != nil {
 		r.mu.Lock()
 		logMsg := fmt.Sprintf("Error sending RequestVote RPC to node %d: %v", server, err)
-		r.logPut(logMsg, PURPLE)
+		r.logPutLocked(logMsg, PURPLE)
 		r.rpcConns[server] = nil
 		r.mu.Unlock()
 		r.dialRPCToPeer(server)

@@ -6,7 +6,7 @@ import (
 )
 
 func (r *Raft) handleClientRequest() {
-	const batchSize = 100
+	batchSize := r.batchSize
 	const lingerTime = 10 * time.Millisecond
 
 	for {
