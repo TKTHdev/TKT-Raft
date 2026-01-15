@@ -114,7 +114,7 @@ func concClientWorker(ctx context.Context, r *Raft) (int, error) {
 		}
 
 		if r.state == LEADER {
-			command := client.createYCSBCommand(YCSB_A)
+			command := client.createYCSBCommand(r.workload)
 			req := ClientRequest{
 				Command: command,
 				RespCh:  make(chan Response, 1),
