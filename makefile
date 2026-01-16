@@ -23,6 +23,7 @@ ARGS ?=
 WORKERS ?= 1 2 4 8 16 32
 BATCH   ?= 1 2 4 8 16 32
 TYPE    ?= ycsb-a
+TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
 
 .PHONY: help deploy build send-bin start kill clean benchmark
 
@@ -104,7 +105,7 @@ benchmark:
 				echo "--- Results for Type=$$type, Batch=$$batch, Workers=$$workers ---" >> results/benchmark.log; \
 				for id in $(IDS); do \
 					ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-					ssh -n $(USER)@$$ip "tail -n 10 $(LOG_DIR)/node_$$id.ans" >> results/benchmark.log; \
+					ssh -n $(USER)@$$ip "tail -n 10 $(LOG_DIR)/node_$$id.ans" >> results/benchmark-$(TIMESTAMP).log; \
 				done; \
 			done; \
 		done; \

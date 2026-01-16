@@ -21,6 +21,10 @@ func (r *Raft) handleClientRequest() {
 			}
 		}
 
+		if len(reqs) == 0 {
+			continue
+		}
+
 		timer := time.NewTimer(lingerTime)
 	loop:
 		for len(reqs) < batchSize {

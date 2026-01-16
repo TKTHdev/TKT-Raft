@@ -92,14 +92,14 @@ func (r *Raft) processReadRequest(req ClientRequest) {
 	for peerID := range r.peerIPPort {
 		if peerID != r.me {
 			go func(target int) {
-				if r.sendReadRPC(target) {
+				if r.sendAppendEntries(target) {
 					atomic.AddInt32(&votes, 1)
 				}
 			}(peerID)
 		}
 	}
 
-	timeout := time.After(200 * time.Millisecond)
+	timeout := time.After(500 * time.Millisecond)
 	ticker := time.NewTicker(2 * time.Millisecond)
 	defer ticker.Stop()
 

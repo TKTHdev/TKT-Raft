@@ -82,7 +82,7 @@ func NewRaft(id int, confPath string, batchSize int, workers int, debug bool, wo
 		me:               id,
 		state:            FOLLOWER,
 		rpcConns:         make(map[int]*rpc.Client),
-		heartBeatCh:      make(chan bool),
+		heartBeatCh:      make(chan bool, 1),
 		clusterSize:      int32(len(peerIPPort)),
 		StateMachineCh:   make(chan []byte),
 		StateMachine:     make(map[string]string),
