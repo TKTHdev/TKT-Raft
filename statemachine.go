@@ -1,7 +1,6 @@
 package main
 
-import (
-)
+import ()
 
 func (r *Raft) applyCommand(command []byte, index int) {
 	commandStr := string(command)
@@ -43,7 +42,7 @@ func (r *Raft) applyCommand(command []byte, index int) {
 	Response := Response{
 		success: true,
 	}
-	
+
 	r.mu.Lock()
 	if parts[0] == "GET" && len(parts) == 2 {
 		key := parts[1]
