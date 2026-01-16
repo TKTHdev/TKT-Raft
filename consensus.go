@@ -92,7 +92,7 @@ func (r *Raft) processReadRequest(req ClientRequest) {
 	for peerID := range r.peerIPPort {
 		if peerID != r.me {
 			go func(target int) {
-				if r.sendAppendEntries(target) {
+				if r.sendRead(target) {
 					atomic.AddInt32(&votes, 1)
 				}
 			}(peerID)
