@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -13,7 +14,11 @@ func (r *Raft) handleClientRequest() {
 		var reqs []ClientRequest
 		select {
 		case req := <-r.ReqCh:
-			reqs = append(reqs, req)
+			if strings.HasPrefix(string(req.Command), "GET") {
+				r.ReadCh <- req
+			} else {
+				reqs = append(reqs, req)
+			}
 		}
 
 		timer := time.NewTimer(lingerTime)
