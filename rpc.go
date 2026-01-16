@@ -5,6 +5,7 @@ import "fmt"
 const (
 	AppendEntries = "Raft.AppendEntries"
 	RequestVote   = "Raft.RequestVote"
+	Read          = "Raft.Read"
 )
 
 const (
@@ -35,6 +36,16 @@ type RequestVoteArgs struct {
 type RequestVoteReply struct {
 	Term        int
 	VoteGranted bool
+}
+
+type ReadArgs struct {
+	Term     int
+	LeaderID int
+}
+
+type ReadReply struct {
+	Term    int
+	Success bool
 }
 
 func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) error {
@@ -149,6 +160,28 @@ func (r *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 
 }
 
+func (r *Raft) Read(args *ReadArgs, reply *ReadReply) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if args.Term < r.currentTerm {
+		reply.Term = r.currentTerm
+		reply.Success = false
+		return nil
+	}
+	if args.Term > r.currentTerm {
+		r.currentTerm = args.Term
+		r.state = FOLLOWER
+		r.votedFor = NOTVOTED
+		r.persistState()
+	}
+
+	reply.Term = r.currentTerm
+	reply.Success = true
+	r.heartBeatCh <- true
+	return nil
+}
+
 func (r *Raft) sendAppendEntries(server int) bool {
 	r.mu.Lock()
 	if r.rpcConns[server] == nil {
@@ -245,4 +278,42 @@ func (r *Raft) sendRequestVote(server int) bool {
 		r.votedFor = NOTVOTED
 	}
 	return reply.VoteGranted
+}
+
+func (r *Raft) sendReadRPC(server int) bool {
+	r.mu.Lock()
+	if r.rpcConns[server] == nil {
+		r.mu.Unlock()
+		r.dialRPCToPeer(server)
+		return false
+	}
+	client := r.rpcConns[server]
+	args := &ReadArgs{
+		Term:     r.currentTerm,
+		LeaderID: r.me,
+	}
+	r.mu.Unlock()
+
+	reply := &ReadReply{}
+	if err := client.Call(Read, args, reply); err != nil {
+		r.mu.Lock()
+		logMsg := fmt.Sprintf("Error sending Read RPC to node %d: %v", server, err)
+		r.logPutLocked(logMsg, PURPLE)
+		r.rpcConns[server] = nil
+		r.mu.Unlock()
+		r.dialRPCToPeer(server)
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.currentTerm < reply.Term {
+		r.currentTerm = reply.Term
+		r.state = FOLLOWER
+		r.votedFor = NOTVOTED
+		r.persistState()
+	}
+
+	return reply.Success
 }

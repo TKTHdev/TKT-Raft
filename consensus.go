@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -78,10 +79,54 @@ func (r *Raft) doLeader() error {
 
 	select {
 	case <-r.newLogEntryCh:
+	case req := <-r.ReadCh:
+		go r.processReadRequest(req)
 	case <-time.After(HEARTBEAT_INTERVAL):
 	}
 
 	return nil
+}
+
+func (r *Raft) processReadRequest(req ClientRequest) {
+	var votes int32 = 1 // Leader votes for itself
+	for peerID := range r.peerIPPort {
+		if peerID != r.me {
+			go func(target int) {
+				if r.sendReadRPC(target) {
+					atomic.AddInt32(&votes, 1)
+				}
+			}(peerID)
+		}
+	}
+
+	timeout := time.After(200 * time.Millisecond)
+	ticker := time.NewTicker(2 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-timeout:
+			req.RespCh <- Response{success: false}
+			return
+		case <-ticker.C:
+			if atomic.LoadInt32(&votes) > r.clusterSize/2 {
+				goto QuorumReached
+			}
+		}
+	}
+
+QuorumReached:
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	parts := strings.Split(string(req.Command), " ")
+	resp := Response{success: true}
+	if len(parts) == 2 {
+		val, ok := r.StateMachine[parts[1]]
+		if ok {
+			resp.value = val
+		}
+	}
+	req.RespCh <- resp
 }
 
 func (r *Raft) runApplier() {

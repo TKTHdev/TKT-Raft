@@ -39,6 +39,7 @@ type Raft struct {
 	StateMachineCh   chan []byte
 	StateMachine     map[string]string
 	ReqCh            chan ClientRequest
+	ReadCh           chan ClientRequest
 	pendingResponses map[int]chan Response
 	mu               sync.RWMutex
 	peerIPPort       map[int]string
@@ -86,6 +87,7 @@ func NewRaft(id int, confPath string, batchSize int, workers int, debug bool, wo
 		StateMachineCh:   make(chan []byte),
 		StateMachine:     make(map[string]string),
 		ReqCh:            make(chan ClientRequest),
+		ReadCh:           make(chan ClientRequest),
 		pendingResponses: make(map[int]chan Response),
 		mu:               sync.RWMutex{},
 		peerIPPort:       peerIPPort,
