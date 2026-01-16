@@ -22,6 +22,11 @@ type Response struct {
 	value   string
 }
 
+type WorkerResult struct {
+	count    int
+	duration time.Duration
+}
+
 type Client struct {
 	sendCh        chan []byte
 	internalState map[string]string
@@ -82,9 +87,9 @@ func (r *Raft) concClient() {
 	ctx, cancel := context.WithTimeout(context.Background(), EXPERIMENT_DURATION)
 	defer cancel()
 
-	p := pool.NewWithResults[int]().WithErrors().WithMaxGoroutines(r.workers)
+	p := pool.NewWithResults[WorkerResult]().WithErrors().WithMaxGoroutines(r.workers)
 	for i := 0; i < r.workers; i++ {
-		p.Go(func() (int, error) { return concClientWorker(ctx, r) })
+		p.Go(func() (WorkerResult, error) { return concClientWorker(ctx, r) })
 	}
 	results, err := p.Wait()
 	//cal throughput
@@ -93,23 +98,43 @@ func (r *Raft) concClient() {
 		return
 	}
 	totalCommands := 0
-	for _, cnt := range results {
-		totalCommands += cnt
+	var totalDuration time.Duration
+	for _, res := range results {
+		totalCommands += res.count
+		totalDuration += res.duration
 	}
 	throughput := float64(totalCommands) / EXPERIMENT_DURATION.Seconds()
+	avgLatency := float64(0)
+	if totalCommands > 0 {
+		avgLatency = float64(totalDuration.Milliseconds()) / float64(totalCommands)
+	}
+
 	fmt.Printf("ConcClient total commands processed: %d\n", totalCommands)
 	fmt.Printf("ConcClient throughput: %.2f commands/second\n", throughput)
+	fmt.Printf("ConcClient average latency: %.2f ms\n", avgLatency)
+
+	// CSV output for makefile to capture
+	workloadName := "unknown"
+	switch r.workload {
+	case 50:
+		workloadName = "ycsb-a"
+	case 5:
+		workloadName = "ycsb-b"
+	case 0:
+		workloadName = "ycsb-c"
+	}
+	fmt.Printf("RESULT:%s,%d,%d,%.2f,%.2f\n", workloadName, r.batchSize, r.workers, throughput, avgLatency)
 }
 
-func concClientWorker(ctx context.Context, r *Raft) (int, error) {
+func concClientWorker(ctx context.Context, r *Raft) (WorkerResult, error) {
 	client := &Client{
 		internalState: make(map[string]string),
 	}
-	cnt := 0
+	res := WorkerResult{}
 	for {
 		select {
 		case <-ctx.Done():
-			return cnt, nil
+			return res, nil
 		default:
 		}
 
@@ -120,27 +145,29 @@ func concClientWorker(ctx context.Context, r *Raft) (int, error) {
 				RespCh:  make(chan Response, 1),
 			}
 
+			start := time.Now()
 			select {
 			case <-ctx.Done():
-				return cnt, nil
+				return res, nil
 			case r.ReqCh <- req:
 			}
 
 			select {
 			case <-ctx.Done():
-				return cnt, nil
+				return res, nil
 			case resp := <-req.RespCh:
 				if resp.success {
-					cnt += 1
+					res.count += 1
+					res.duration += time.Since(start)
 				} else {
 					fmt.Println("ConcClient command failed:", string(command))
-					return cnt, fmt.Errorf("command failed")
+					return res, fmt.Errorf("command failed")
 				}
 			}
 		} else {
 			select {
 			case <-ctx.Done():
-				return cnt, nil
+				return res, nil
 			case <-time.After(10 * time.Millisecond):
 			}
 		}

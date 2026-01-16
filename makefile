@@ -87,28 +87,31 @@ clean:
 
 benchmark:
 	@mkdir -p results
-	@echo "Starting benchmark..." > results/benchmark.log
+	@echo "Workload,Batch,Workers,Throughput(ops/sec),Latency(ms)" > results/benchmark-$(TIMESTAMP).csv
+	@echo "Starting benchmark..."
 	@for type in $(TYPE); do \
 		for batch in $(BATCH); do \
 			for workers in $(WORKERS); do \
 				echo "Running benchmark: Type=$$type, Batch=$$batch, Workers=$$workers"; \
 				for id in $(IDS); do \
 					ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-					ssh -n $(USER)@$$ip "rm $(LOG_DIR)/node_$$id.ans"; \
-					ssh -n $(USER)@$$ip "cd $(PROJECT_DIR) && rm raft_log_$$id.bin"; \
-					ssh -n $(USER)@$$ip "cd $(PROJECT_DIR) && rm raft_state_$$id.bin"; \
+					ssh -n $(USER)@$$ip "rm -f $(LOG_DIR)/node_$$id.ans"; \
+					if [ "$$type" != "ycsb-c" ]; then \
+						ssh -n $(USER)@$$ip "cd $(PROJECT_DIR) && rm -f raft_log_$$id.bin"; \
+						ssh -n $(USER)@$$ip "cd $(PROJECT_DIR) && rm -f raft_state_$$id.bin"; \
+					fi; \
 				done; \
 				$(MAKE) kill; \
 				sleep 2; \
 				$(MAKE) start ARGS="--batch-size $$batch --workers $$workers --workload $$type"; \
 				sleep 20; \
-				echo "--- Results for Type=$$type, Batch=$$batch, Workers=$$workers ---" >> results/benchmark.log; \
+				echo "--- Results for Type=$$type, Batch=$$batch, Workers=$$workers ---"; \
 				for id in $(IDS); do \
 					ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-					ssh -n $(USER)@$$ip "tail -n 10 $(LOG_DIR)/node_$$id.ans" >> results/benchmark-$(TIMESTAMP).log; \
+					ssh -n $(USER)@$$ip "grep 'RESULT:' $(LOG_DIR)/node_$$id.ans | cut -d':' -f2" >> results/benchmark-$(TIMESTAMP).csv; \
 				done; \
 			done; \
 		done; \
 	done
 	@$(MAKE) kill
-	@echo "Benchmark finished. Results saved to results/benchmark.log"
+	@echo "Benchmark finished. Results saved to results/benchmark-$(TIMESTAMP).csv"
