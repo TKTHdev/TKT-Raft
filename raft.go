@@ -113,6 +113,34 @@ func NewRaft(id int, confPath string, batchSize int, workers int, debug bool, wo
 	return r
 }
 
+
+func (r *Raft) sendRead(server int) bool {
+	r.mu.Lock()
+	if r.rpcConns[server] == nil {
+		r.mu.Unlock()
+		r.dialRPCToPeer(server)
+		return false
+	}
+	client := r.rpcConns[server]
+	args := &ReadArgs{
+		Term: r.currentTerm,
+	}
+	r.mu.Unlock()
+
+	reply := &ReadReply{}
+	if err := client.Call(Read, args, reply); err != nil {
+		r.mu.Lock()
+		logMsg := fmt.Sprintf("Error sending Read RPC to node %d: %v", server, err)
+		r.logPutLocked(logMsg, PURPLE)
+		r.rpcConns[server] = nil
+		r.mu.Unlock()
+		r.dialRPCToPeer(server)
+		return false
+	}
+
+	return reply.Success
+}
+
 func (r *Raft) persistState() {
 	if err := r.storage.SaveState(r.currentTerm, r.votedFor); err != nil {
 		fmt.Printf("Error persisting state: %v\n", err)

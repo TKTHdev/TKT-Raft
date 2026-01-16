@@ -5,11 +5,20 @@ import "fmt"
 const (
 	AppendEntries = "Raft.AppendEntries"
 	RequestVote   = "Raft.RequestVote"
+	Read          = "Raft.Read"
 )
 
 const (
 	NOTVOTED = -2
 )
+
+type ReadArgs struct {
+	Term int
+}
+
+type ReadReply struct {
+	Success bool
+}
 
 type AppendEntriesArgs struct {
 	Term         int
@@ -35,6 +44,18 @@ type RequestVoteArgs struct {
 type RequestVoteReply struct {
 	Term        int
 	VoteGranted bool
+}
+
+func (r *Raft) Read(args *ReadArgs, reply *ReadReply) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.currentTerm <= args.Term {
+		reply.Success = true
+	} else {
+		reply.Success = false
+	}
+	return nil
 }
 
 func (r *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) error {
