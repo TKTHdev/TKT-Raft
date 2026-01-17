@@ -39,7 +39,7 @@ type Raft struct {
 	StateMachineCh   chan []byte
 	StateMachine     map[string]string
 	ReqCh            chan ClientRequest
-	ReadCh           chan ClientRequest
+	ReadCh           chan []ClientRequest
 	pendingResponses map[int]chan Response
 	mu               sync.RWMutex
 	peerIPPort       map[int]string
@@ -47,13 +47,14 @@ type Raft struct {
 	commitCond       *sync.Cond
 	replicating      map[int]bool
 	newLogEntryCh    chan bool
-	batchSize        int
+	writeBatchSize   int
+	readBatchSize    int
 	workers          int
 	debug            bool
 	workload         int
 }
 
-func NewRaft(id int, confPath string, batchSize int, workers int, debug bool, workload int) *Raft {
+func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, workers int, debug bool, workload int) *Raft {
 	peerIPPort := parseConfig(confPath)
 	storage, err := NewStorage(id)
 	if err != nil {
@@ -87,14 +88,15 @@ func NewRaft(id int, confPath string, batchSize int, workers int, debug bool, wo
 		StateMachineCh:   make(chan []byte),
 		StateMachine:     make(map[string]string),
 		ReqCh:            make(chan ClientRequest),
-		ReadCh:           make(chan ClientRequest),
+		ReadCh:           make(chan []ClientRequest),
 		pendingResponses: make(map[int]chan Response),
 		mu:               sync.RWMutex{},
 		peerIPPort:       peerIPPort,
 		storage:          storage,
 		replicating:      make(map[int]bool),
 		newLogEntryCh:    make(chan bool, 1),
-		batchSize:        batchSize,
+		writeBatchSize:   writeBatchSize,
+		readBatchSize:    readBatchSize,
 		workers:          workers,
 		debug:            debug,
 		workload:         workload,

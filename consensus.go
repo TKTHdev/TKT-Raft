@@ -79,15 +79,15 @@ func (r *Raft) doLeader() error {
 
 	select {
 	case <-r.newLogEntryCh:
-	case req := <-r.ReadCh:
-		go r.processReadRequest(req)
+	case reqs := <-r.ReadCh:
+		go r.processReadBatch(reqs)
 	case <-time.After(HEARTBEAT_INTERVAL):
 	}
 
 	return nil
 }
 
-func (r *Raft) processReadRequest(req ClientRequest) {
+func (r *Raft) processReadBatch(reqs []ClientRequest) {
 	var votes int32 = 1 // Leader votes for itself
 	for peerID := range r.peerIPPort {
 		if peerID != r.me {
@@ -106,7 +106,9 @@ func (r *Raft) processReadRequest(req ClientRequest) {
 	for {
 		select {
 		case <-timeout:
-			req.RespCh <- Response{success: false}
+			for _, req := range reqs {
+				req.RespCh <- Response{success: false}
+			}
 			return
 		case <-ticker.C:
 			if atomic.LoadInt32(&votes) > r.clusterSize/2 {
@@ -118,15 +120,17 @@ func (r *Raft) processReadRequest(req ClientRequest) {
 QuorumReached:
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	parts := strings.Split(string(req.Command), " ")
-	resp := Response{success: true}
-	if len(parts) == 2 {
-		val, ok := r.StateMachine[parts[1]]
-		if ok {
-			resp.value = val
+	for _, req := range reqs {
+		parts := strings.Split(string(req.Command), " ")
+		resp := Response{success: true}
+		if len(parts) == 2 {
+			val, ok := r.StateMachine[parts[1]]
+			if ok {
+				resp.value = val
+			}
 		}
+		req.RespCh <- resp
 	}
-	req.RespCh <- resp
 }
 
 func (r *Raft) runApplier() {
