@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-
 const (
 	lingerTime = 5 * time.Millisecond
 )

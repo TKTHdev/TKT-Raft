@@ -113,7 +113,6 @@ func NewRaft(id int, confPath string, batchSize int, workers int, debug bool, wo
 	return r
 }
 
-
 func (r *Raft) sendRead(server int) bool {
 	r.mu.Lock()
 	if r.rpcConns[server] == nil {
