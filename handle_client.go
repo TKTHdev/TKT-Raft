@@ -11,36 +11,45 @@ const (
 )
 
 func (r *Raft) handleClientRequest() {
-	batchSize := r.batchSize
+	writeBatchSize := r.writeBatchSize
+	readBatchSize := r.readBatchSize
 	for {
-		var reqs []ClientRequest
-		select {
-		case req := <-r.ReqCh:
+		var writeReqs []ClientRequest
+		var readReqs []ClientRequest
+
+		process := func(req ClientRequest) {
 			if strings.HasPrefix(string(req.Command), "GET") {
-				r.ReadCh <- req
+				readReqs = append(readReqs, req)
 			} else {
-				reqs = append(reqs, req)
+				writeReqs = append(writeReqs, req)
 			}
 		}
 
-		if len(reqs) == 0 {
-			continue
+		select {
+		case req := <-r.ReqCh:
+			process(req)
 		}
 
 		timer := time.NewTimer(lingerTime)
 	loop:
-		for len(reqs) < batchSize {
+		for {
+			if len(writeReqs) >= writeBatchSize || len(readReqs) >= readBatchSize {
+				break loop
+			}
 			select {
 			case req := <-r.ReqCh:
-				reqs = append(reqs, req)
+				process(req)
 			case <-timer.C:
 				break loop
 			}
 		}
 		timer.Stop()
 
-		if len(reqs) > 0 {
-			r.appendEntriesToLog(reqs)
+		if len(writeReqs) > 0 {
+			r.appendEntriesToLog(writeReqs)
+		}
+		if len(readReqs) > 0 {
+			r.ReadCh <- readReqs
 		}
 	}
 }

@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/sourcegraph/conc/pool"
 	"math/rand"
 	"time"
+
+	"github.com/sourcegraph/conc/pool"
 )
 
 const (
@@ -123,7 +124,7 @@ func (r *Raft) concClient() {
 	case 0:
 		workloadName = "ycsb-c"
 	}
-	fmt.Printf("RESULT:%s,%d,%d,%.2f,%.2f\n", workloadName, r.batchSize, r.workers, throughput, avgLatency)
+	fmt.Printf("RESULT:%s,%d,%d,%d,%.2f,%.2f\n", workloadName, r.readBatchSize, r.writeBatchSize, r.workers, throughput, avgLatency)
 }
 
 func concClientWorker(ctx context.Context, r *Raft) (WorkerResult, error) {

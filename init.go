@@ -17,7 +17,8 @@ func main() {
 				Action: func(c *cli.Context) error {
 					id := c.Int("id")
 					conf := c.String("conf")
-					batchSize := c.Int("batch-size")
+					writeBatchSize := c.Int("write-batch-size")
+					readBatchSize := c.Int("read-batch-size")
 					workers := c.Int("workers")
 					debug := c.Bool("debug")
 					workloadStr := c.String("workload")
@@ -30,7 +31,7 @@ func main() {
 					case "ycsb-c":
 						workload = 0
 					}
-					r := NewRaft(id, conf, batchSize, workers, debug, workload)
+					r := NewRaft(id, conf, writeBatchSize, readBatchSize, workers, debug, workload)
 					r.Run()
 					return nil
 				},
@@ -44,8 +45,13 @@ func main() {
 						Usage: "Path to config file",
 					},
 					&cli.IntFlag{
-						Name:  "batch-size",
-						Usage: "Raft disk batch size",
+						Name:  "write-batch-size",
+						Usage: "Raft disk write batch size",
+						Value: 128,
+					},
+					&cli.IntFlag{
+						Name:  "read-batch-size",
+						Usage: "Raft read batch size",
 						Value: 128,
 					},
 					&cli.IntFlag{
