@@ -88,7 +88,7 @@ clean:
 
 benchmark:
 	@mkdir -p results
-	@echo "Workload,ReadBatch,WriteBatch,Workers,Throughput(ops/sec),Latency(ms)" > results/benchmark-$(TIMESTAMP).csv
+	@echo "Workload,ReadBatch,WriteBatch,Workers,Throughput(ops/sec),Latency(ms)" > results/benchmark-$(TIMESTAMP)-$$type.csv
 	@echo "Starting benchmark..."
 	@for type in $(TYPE); do \
 		for rbatch in $(READ_BATCH); do \
