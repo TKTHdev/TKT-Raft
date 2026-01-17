@@ -6,10 +6,13 @@ import (
 	"time"
 )
 
+
+const (
+	lingerTime = 5 * time.Millisecond
+)
+
 func (r *Raft) handleClientRequest() {
 	batchSize := r.batchSize
-	const lingerTime = 10 * time.Millisecond
-
 	for {
 		var reqs []ClientRequest
 		select {

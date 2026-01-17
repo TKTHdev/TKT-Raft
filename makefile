@@ -108,7 +108,7 @@ benchmark:
 				echo "--- Results for Type=$$type, Batch=$$batch, Workers=$$workers ---"; \
 				for id in $(IDS); do \
 					ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-					ssh -n $(USER)@$$ip "grep 'RESULT:' $(LOG_DIR)/node_$$id.ans | cut -d':' -f2" >> results/benchmark-$(TIMESTAMP).csv; \
+					ssh -n $(USER)@$$ip "grep 'RESULT:' $(LOG_DIR)/node_$$id.ans | cut -d':' -f2" >> results/benchmark-$(TIMESTAMP)-$$type.csv; \
 				done; \
 			done; \
 		done; \
