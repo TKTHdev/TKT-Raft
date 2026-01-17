@@ -3,10 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/sourcegraph/conc/pool"
 	"math/rand"
 	"time"
-
-	"github.com/sourcegraph/conc/pool"
 )
 
 const (
