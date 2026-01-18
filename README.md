@@ -158,12 +158,12 @@ The entry point is the CLI command defined in `init.go`, utilizing `urfave/cli`.
 
 ## Limitations
 
-1.  **No Persistence:** If a node crashes and restarts, it loses all log entries and state. `currentTerm`, `votedFor`, and the `log` are not saved to disk.
-2.  **Fixed Configuration:** Cluster membership is static, defined in `cluster.conf` at startup. Dynamic membership changes are not supported.
-3.  **No Snapshotting:** The log will grow indefinitely. There is no mechanism to compact the log or create snapshots.
-4.  **Internal-Only Client:** External applications cannot interact with the cluster. The `client` logic is hardcoded within the server binary.
-5.  **Basic Error Handling:** Network errors are logged, but complex recovery scenarios or backoff strategies might be minimal.
-6.  **TODOs (Inferred):**
+
+1.  **Fixed Configuration:** Cluster membership is static, defined in `cluster.conf` at startup. Dynamic membership changes are not supported.
+2.  **No Snapshotting:** The log will grow indefinitely. There is no mechanism to compact the log or create snapshots.
+3.  **Internal-Only Client:** External applications cannot interact with the cluster. The `client` logic is hardcoded within the server binary.
+4.  **Basic Error Handling:** Network errors are logged, but complex recovery scenarios or backoff strategies might be minimal.
+5.  **TODOs (Inferred):**
     *   Add an external API (HTTP/gRPC) for client interaction.
     *   Implement log compaction/snapshots.
     *   Add formal unit tests.
