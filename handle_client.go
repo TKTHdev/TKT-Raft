@@ -7,49 +7,83 @@ import (
 )
 
 const (
-	lingerTime = 10 * time.Millisecond
+	READ_LINGER_TIME  = 15 * time.Millisecond
+	WRITE_LINGER_TIME = 15 * time.Millisecond
 )
 
 func (r *Raft) handleClientRequest() {
 	writeBatchSize := r.writeBatchSize
 	readBatchSize := r.readBatchSize
-	for {
-		var writeReqs []ClientRequest
-		var readReqs []ClientRequest
 
-		process := func(req ClientRequest) {
-			if strings.HasPrefix(string(req.Command), "GET") {
-				readReqs = append(readReqs, req)
-			} else {
-				writeReqs = append(writeReqs, req)
-			}
-		}
+	var writeReqs []ClientRequest
+	var readReqs []ClientRequest
 
-		select {
-		case req := <-r.ReqCh:
-			process(req)
-		}
+	var writeTimer *time.Timer
+	var readTimer *time.Timer
+	var writeTimerCh <-chan time.Time
+	var readTimerCh <-chan time.Time
 
-		timer := time.NewTimer(lingerTime)
-	loop:
-		for {
-			if len(writeReqs) >= writeBatchSize || len(readReqs) >= readBatchSize {
-				break loop
-			}
-			select {
-			case req := <-r.ReqCh:
-				process(req)
-			case <-timer.C:
-				break loop
-			}
-		}
-		timer.Stop()
-
+	flushWrites := func() {
 		if len(writeReqs) > 0 {
 			r.appendEntriesToLog(writeReqs)
+			writeReqs = nil
 		}
+	}
+
+	flushReads := func() {
 		if len(readReqs) > 0 {
 			r.ReadCh <- readReqs
+			readReqs = nil
+		}
+	}
+
+	stopTimer := func(t *time.Timer) {
+		if !t.Stop() {
+			select {
+			case <-t.C:
+			default:
+			}
+		}
+	}
+
+	for {
+		select {
+		case req := <-r.ReqCh:
+			if strings.HasPrefix(string(req.Command), "GET") {
+				readReqs = append(readReqs, req)
+				if len(readReqs) >= readBatchSize {
+					flushReads()
+					if readTimer != nil {
+						stopTimer(readTimer)
+						readTimer = nil
+						readTimerCh = nil
+					}
+				} else if readTimer == nil {
+					readTimer = time.NewTimer(READ_LINGER_TIME)
+					readTimerCh = readTimer.C
+				}
+			} else {
+				writeReqs = append(writeReqs, req)
+				if len(writeReqs) >= writeBatchSize {
+					flushWrites()
+					if writeTimer != nil {
+						stopTimer(writeTimer)
+						writeTimer = nil
+						writeTimerCh = nil
+					}
+				} else if writeTimer == nil {
+					writeTimer = time.NewTimer(WRITE_LINGER_TIME)
+					writeTimerCh = writeTimer.C
+				}
+			}
+		case <-writeTimerCh:
+			flushWrites()
+			writeTimer = nil
+			writeTimerCh = nil
+		case <-readTimerCh:
+			flushReads()
+			readTimer = nil
+			readTimerCh = nil
 		}
 	}
 }
