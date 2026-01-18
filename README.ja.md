@@ -11,8 +11,6 @@
     - リーダー選出 (Leader election)
     - ログ複製 (Log replication)
     - 安全性 (Safety: term, commit index, etc.)
-- 未実装
-    - 線形化可能な読み取り (Linearizable Read)
 
 ### Raftノードの概要
 システムの核心は `raft.go` で定義されている `Raft` 構造体です。各ノードはスタンドアロンサーバーとして動作し、RPC を介してピアと通信します。
