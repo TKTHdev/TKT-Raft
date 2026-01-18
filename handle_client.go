@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	lingerTime = 5 * time.Millisecond
+	lingerTime = 10 * time.Millisecond
 )
 
 func (r *Raft) handleClientRequest() {

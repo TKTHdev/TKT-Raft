@@ -88,33 +88,45 @@ clean:
 
 benchmark:
 	@mkdir -p results
-	@echo "Workload,ReadBatch,WriteBatch,Workers,Throughput(ops/sec),Latency(ms)" > results/benchmark-$(TIMESTAMP)-$$type.csv
 	@echo "Starting benchmark..."
 	@for type in $(TYPE); do \
+		BENCH_FILE="results/benchmark-$(TIMESTAMP)-$$type.csv"; \
+		echo "Initializing $$BENCH_FILE ..."; \
+		echo "Workload,ReadBatch,WriteBatch,Workers,Throughput(ops/sec),Latency(ms)" > "$$BENCH_FILE"; \
+		\
 		for rbatch in $(READ_BATCH); do \
 			for wbatch in $(WRITE_BATCH); do \
 				for workers in $(WORKERS); do \
 					echo "Running benchmark: Type=$$type, ReadBatch=$$rbatch, WriteBatch=$$wbatch, Workers=$$workers"; \
+					\
 					for id in $(IDS); do \
 						ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 						ssh -n $(USER)@$$ip "rm -f $(LOG_DIR)/node_$$id.ans"; \
 						if [ "$$type" != "ycsb-c" ]; then \
-							ssh -n $(USER)@$$ip "cd $(PROJECT_DIR) && rm -f raft_log_$$id.bin"; \
-							ssh -n $(USER)@$$ip "cd $(PROJECT_DIR) && rm -f raft_state_$$id.bin"; \
+							ssh -n $(USER)@$$ip "cd $(PROJECT_DIR) && rm -f raft_log_$$id.bin raft_state_$$id.bin"; \
 						fi; \
 					done; \
+					\
 					$(MAKE) kill; \
 					sleep 2; \
 					$(MAKE) start ARGS="--read-batch-size $$rbatch --write-batch-size $$wbatch --workers $$workers --workload $$type"; \
 					sleep 20; \
-					echo "--- Results for Type=$$type, ReadBatch=$$rbatch, WriteBatch=$$wbatch, Workers=$$workers ---"; \
+					\
+					echo "--- Collecting results for Type=$$type, Workers=$$workers ---"; \
+					\
 					for id in $(IDS); do \
 						ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-						ssh -n $(USER)@$$ip "grep 'RESULT:' $(LOG_DIR)/node_$$id.ans | cut -d':' -f2" >> results/benchmark-$(TIMESTAMP)-$$type.csv; \
+						\
+						RES=$$(ssh -n $(USER)@$$ip "grep 'RESULT:' $(LOG_DIR)/node_$$id.ans | tail -n 1" | sed 's/.*RESULT://' | awk -F, '{print $$(NF-1) "," $$NF}' | tr -d ' \r\n'); \
+						\
+						if [ -n "$$RES" ]; then \
+							echo "$$type,$$rbatch,$$wbatch,$$workers,$$RES" >> "$$BENCH_FILE"; \
+						fi; \
 					done; \
 				done; \
 			done; \
 		done; \
+		echo "Finished workload: $$type. Results saved to $$BENCH_FILE"; \
 	done
 	@$(MAKE) kill
-	@echo "Benchmark finished. Results saved to results/benchmark-$(TIMESTAMP).csv"
+	@echo "All benchmarks finished."
