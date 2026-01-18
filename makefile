@@ -81,7 +81,7 @@ bench-net-remote:
 	echo "Running Benchmark Client on Node $(CLIENT_ID)..."; \
 	ssh $(USER)@$$CLIENT_IP "cd $(PROJECT_DIR) && ./benchmark_tool -mode client -target $(SERVER_ID) -config cluster.conf"; \
 	echo "Stopping Benchmark Server..."; \
-	ssh $(USER)@$$SERVER_IP "pkill benchmark_tool || true"
+	ssh $(USER)@$$SERVER_IP "pkill benchmark_tool || true && cd $(PROJECT_DIR) && rm benchmark_tool"
 
 get-metrics: send-bench-tool
 	@echo "Selecting nodes for metrics..."
@@ -135,7 +135,7 @@ clean:
 		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 		bin="$(BINARY_NAME)_$$id"; \
 		echo "[$$ip] Cleaning $$bin..."; \
-		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && rm -f $$bin logs/node_$$id.ans *.bin" & \
+		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && rm -f $$bin logs/node_$$id.ans *.bin" results/* & \
 	done; wait
 
 benchmark:
