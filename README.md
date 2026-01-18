@@ -55,7 +55,7 @@ To run a single node locally, you need a valid `cluster.conf` (one is provided i
 The included `makefile` automates the deployment, building, and lifecycle management of the cluster using `ssh` and `scp`. It is designed to work with the nodes defined in `cluster.conf`.
 
 **Prerequisites:**
-1.  **SSH Access:** You must have password-less SSH access to all IPs listed in `cluster.conf` (including `localhost`).
+1.  **SSH Access:** You must have password-less SSH access to all IPs listed in `cluster.conf` (including `localhost`). It is recommended to use `ssh-agent` and `ssh-add` so that the Makefile can execute commands on remote nodes without prompting for passwords.
 2.  **Configuration:**
     *   **`cluster.conf`**: Define your nodes (ID, IP, Port).
     *   **`makefile`**: Open the file and update `USER` (default: `tkt`) and `PROJECT_DIR` (default: `~/proj/raft`) to match your environment.
