@@ -51,53 +51,65 @@ To run a single node locally, you need a valid `cluster.conf` (one is provided i
 ./raft_server start --id 1 --conf cluster.conf
 ```
 
-### Run a Local Cluster (3 Nodes)
-You can run a 3-node cluster on your local machine by spawning three separate processes. Alternatively, you can use the `controller/makefile` for easier management.
+### Cluster Management via Makefile
+The included `makefile` automates the deployment, building, and lifecycle management of the cluster using `ssh` and `scp`. It is designed to work with the nodes defined in `cluster.conf`.
 
-**Using the `controller/makefile`:**
+**Prerequisites:**
+1.  **SSH Access:** You must have password-less SSH access to all IPs listed in `cluster.conf` (including `localhost`).
+2.  **Configuration:**
+    *   **`cluster.conf`**: Define your nodes (ID, IP, Port).
+    *   **`makefile`**: Open the file and update `USER` (default: `tkt`) and `PROJECT_DIR` (default: `~/proj/raft`) to match your environment.
 
-1.  **Ensure `cluster.conf` is correct:**
-    ```json
-    [
-      { "id": 1, "ip": "localhost", "port": 5000},
-      { "id": 2, "ip": "localhost", "port": 5001},
-      { "id": 3, "ip": "localhost", "port": 5002}
-    ]
-    ```
+**Core Commands:**
 
-2.  **Build and Start the nodes:**
-    ```bash
-    make build    # Builds raft_server_1, raft_server_2, raft_server_3
-    make start    # Starts all nodes in the background
-    ```
+*   **`make deploy`**
+    Distributes the `cluster.conf` file to all nodes listed in the config.
 
-3.  **To stop the cluster:**
-    ```bash
-    make kill
-    ```
+*   **`make send-bin`**
+    Cross-compiles the binary locally (Linux/AMD64) and transfers it to all remote nodes. This is the recommended way to update code.
 
-**Manual Start (for individual control or debugging):**
+*   **`make build`**
+    Triggers a `go build` command *on* the remote nodes. Use this if the remote nodes have Go installed and you prefer remote compilation.
 
-1.  **Ensure `cluster.conf` is correct:**
-    ```json
-    [
-      { "id": 1, "ip": "localhost", "port": 5000},
-      { "id": 2, "ip": "localhost", "port": 5001},
-      { "id": 3, "ip": "localhost", "port": 5002}
-    ]
-    ```
+*   **`make start`**
+    Starts the Raft server on all nodes in the background. Logs are redirected to `logs/node_<ID>.ans`.
 
-2.  **Start the nodes:**
-    ```bash
-    # Terminal 1
-    ./raft_server start --id 1 --conf cluster.conf
+*   **`make kill`**
+    Stops the Raft server processes on all nodes.
 
-    # Terminal 2
-    ./raft_server start --id 2 --conf cluster.conf
+*   **`make clean`**
+    Removes binaries and log files from the nodes.
 
-    # Terminal 3
-    ./raft_server start --id 3 --conf cluster.conf
-    ```
+**Benchmarking & Metrics:**
+
+*   **`make benchmark`**
+    Runs a comprehensive benchmark suite measuring throughput and latency across different workloads and batch sizes.
+
+*   **`make get-metrics`**
+    Runs `bench-disk-remote` and `bench-net-remote` to measure the underlying disk and network performance of your cluster environment.
+
+**Example Workflow:**
+
+1.  **Configure:** Edit `cluster.conf` and `makefile` variables.
+2.  **Deploy Config:** `make deploy`
+3.  **Update Code:** `make send-bin`
+4.  **Start Cluster:** `make start`
+5.  **Monitor:** Check logs on nodes (e.g., `tail -f logs/node_1.ans`).
+6.  **Stop:** `make kill`
+
+**Manual Start (Debugging):**
+If you prefer not to use the makefile or SSH, you can run nodes manually in separate terminals:
+
+```bash
+# Terminal 1
+./raft_server start --id 1 --conf cluster.conf
+
+# Terminal 2
+./raft_server start --id 2 --conf cluster.conf
+
+# Terminal 3
+./raft_server start --id 3 --conf cluster.conf
+```
 
 ### Minimal Sample Code
 The project is designed as a standalone binary rather than a library, but here is how the `main` function essentially bootstraps a node (based on `init.go`):
@@ -142,7 +154,7 @@ The entry point is the CLI command defined in `init.go`, utilizing `urfave/cli`.
 ### Strategy
 *   **Simulation/Load Testing:** The project relies on the internal `client.go` to generate random traffic (`randomOperation`, `createRandomCommand`). This acts as a continuous integration test when the cluster is running.
 *   **Unit Tests:** There are no standard Go unit tests (`_test.go` files) visible in the top-level directory.
-*   **Scenarios:** The implementation implicitly tests **Leader Election** (via timeouts in `consensus.go`) and **Replication** (via the internal client pushing logs). The `controller/makefile` suggests a workflow for deploying to multiple hosts to test real network distribution.
+*   **Scenarios:** The implementation implicitly tests **Leader Election** (via timeouts in `consensus.go`) and **Replication** (via the internal client pushing logs). The `makefile` suggests a workflow for deploying to multiple hosts to test real network distribution.
 
 ## Limitations
 
