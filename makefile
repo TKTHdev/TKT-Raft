@@ -26,11 +26,16 @@ WRITE_BATCH ?= 1 2 4 8 16 32
 TYPE    ?= ycsb-a
 TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
 
-.PHONY: help deploy build send-bin start kill clean benchmark
+.PHONY: help deploy build send-bin start kill clean benchmark bench-tool-build-linux send-bench-tool bench-disk-remote bench-net-remote get-metrics
 
 help:
 	@echo "Usage: make [target] [TARGET_ID=id] [DEBUG=true]"
 	@echo "Targets: deploy, build, send-bin, start, kill, clean, benchmark"
+	@echo "Benchmark Tools:"
+	@echo "  make send-bench-tool"
+	@echo "  make bench-disk-remote ID=<id>"
+	@echo "  make bench-net-remote SERVER_ID=<id> CLIENT_ID=<id>"
+	@echo "  make get-metrics"
 
 deploy:
 	@for id in $(IDS); do \
@@ -46,6 +51,53 @@ build:
 		echo "[$$ip] Building $$bin..."; \
 		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && go build -o $$bin" & \
 	done; wait
+
+bench-tool-build-linux:
+	cd disk_and_communication_latency_measure && GOOS=linux GOARCH=amd64 go build -o benchmark_linux main.go
+
+send-bench-tool: bench-tool-build-linux
+	@for id in $(ALL_IDS); do \
+		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+		echo "[$$ip] Sending benchmark tool..."; \
+		scp disk_and_communication_latency_measure/benchmark_linux $(USER)@$$ip:$(PROJECT_DIR)/benchmark_tool && \
+		ssh $(USER)@$$ip "chmod +x $(PROJECT_DIR)/benchmark_tool" & \
+	done; wait
+
+bench-disk-remote:
+	@if [ -z "$(ID)" ]; then echo "Usage: make bench-disk-remote ID=<id>"; exit 1; fi
+	@IP=$$(jq -r --arg i "$(ID)" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+	echo "Running Disk Benchmark on Node $(ID) ($$IP)..."; \
+	ssh $(USER)@$$IP "cd $(PROJECT_DIR) && ./benchmark_tool -mode disk"
+
+bench-net-remote:
+	@if [ -z "$(SERVER_ID)" ] || [ -z "$(CLIENT_ID)" ]; then echo "Usage: make bench-net-remote SERVER_ID=<id> CLIENT_ID=<id>"; exit 1; fi
+	@echo "--- Setting up Network Benchmark between Node $(SERVER_ID) and Node $(CLIENT_ID) ---"
+	@SERVER_IP=$$(jq -r --arg i "$(SERVER_ID)" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+	CLIENT_IP=$$(jq -r --arg i "$(CLIENT_ID)" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+	echo "Server: $$SERVER_IP | Client: $$CLIENT_IP"; \
+	echo "Starting Benchmark Server on Node $(SERVER_ID)..."; \
+	ssh -f $(USER)@$$SERVER_IP "cd $(PROJECT_DIR) && nohup ./benchmark_tool -mode server -id $(SERVER_ID) -config cluster.conf > /dev/null 2>&1 &"; \
+	sleep 2; \
+	echo "Running Benchmark Client on Node $(CLIENT_ID)..."; \
+	ssh $(USER)@$$CLIENT_IP "cd $(PROJECT_DIR) && ./benchmark_tool -mode client -target $(SERVER_ID) -config cluster.conf"; \
+	echo "Stopping Benchmark Server..."; \
+	ssh $(USER)@$$SERVER_IP "pkill benchmark_tool || true"
+
+get-metrics: send-bench-tool
+	@echo "Selecting nodes for metrics..."
+	@NODE1=$$(jq -r '.[0].id' $(CONFIG_FILE)); \
+	NODE2=$$(jq -r '.[1].id' $(CONFIG_FILE)); \
+	echo "=== Running Disk Benchmark on Node $$NODE1 ==="; \
+	$(MAKE) bench-disk-remote ID=$$NODE1; \
+	if [ "$$NODE2" != "null" ]; then \
+		echo ""; \
+		echo "=== Running Network Benchmark (Server: Node $$NODE1, Client: Node $$NODE2) ==="; \
+		$(MAKE) bench-net-remote SERVER_ID=$$NODE1 CLIENT_ID=$$NODE2; \
+	else \
+		echo "Not enough nodes for network benchmark."; \
+	fi
+
+
 
 send-bin:
 	GOOS=linux GOARCH=amd64 go build -o /tmp/raft_tmp .
