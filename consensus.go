@@ -88,20 +88,23 @@ func (r *Raft) doLeader() error {
 }
 
 func (r *Raft) processReadBatch(reqs []ClientRequest) {
-	var votes int32 = 1 // Leader votes for itself
+	votes := 1 // Leader votes for itself
+	voteCh := make(chan bool, len(r.peerIPPort))
+	timeout := time.After(500 * time.Millisecond)
+
+	if int32(votes) > r.clusterSize/2 {
+		goto QuorumReached
+	}
+
 	for peerID := range r.peerIPPort {
 		if peerID != r.me {
 			go func(target int) {
 				if r.sendRead(target) {
-					atomic.AddInt32(&votes, 1)
+					voteCh <- true
 				}
 			}(peerID)
 		}
 	}
-
-	timeout := time.After(500 * time.Millisecond)
-	ticker := time.NewTicker(2 * time.Millisecond)
-	defer ticker.Stop()
 
 	for {
 		select {
@@ -110,8 +113,9 @@ func (r *Raft) processReadBatch(reqs []ClientRequest) {
 				req.RespCh <- Response{success: false}
 			}
 			return
-		case <-ticker.C:
-			if atomic.LoadInt32(&votes) > r.clusterSize/2 {
+		case <-voteCh:
+			votes++
+			if int32(votes) > r.clusterSize/2 {
 				goto QuorumReached
 			}
 		}
