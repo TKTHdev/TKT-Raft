@@ -1,5 +1,7 @@
 # TKT-Raft
 
+[English](README.md) | [日本語](README.ja.md)
+
 ## Overview
 - Simple implementation of Raft Consensus Algorithm
 - Written in Go
