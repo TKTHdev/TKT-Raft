@@ -11,8 +11,6 @@
     - Leader election
     - Log replication
     - Safety (term, commit index, etc.)
-- What are not implemented
-    - Linearizable Read
 
 
 ### Raft Node Overview
