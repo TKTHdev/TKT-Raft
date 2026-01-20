@@ -81,7 +81,7 @@ bench-net-remote:
 	echo "Running Benchmark Client on Node $(CLIENT_ID)..."; \
 	ssh $(USER)@$$CLIENT_IP "cd $(PROJECT_DIR) && ./benchmark_tool -mode client -target $(SERVER_ID) -config cluster.conf"; \
 	echo "Stopping Benchmark Server..."; \
-	ssh $(USER)@$$SERVER_IP "pkill benchmark_tool || true && cd $(PROJECT_DIR) && rm benchmark_tool"
+	ssh $(USER)@$$SERVER_IP "pkill benchmark_tool || true && cd $(PROJECT_DIR) && rm benchmark_tool && rm disk_and_communication_latency_measure/benchmark_linux"
 
 get-metrics: send-bench-tool
 	@echo "Selecting nodes for metrics..."
