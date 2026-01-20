@@ -14,9 +14,10 @@ type Storage struct {
 	logFile    *os.File
 	logWriter  *bufio.Writer
 	logOffsets []int64
+	async      bool
 }
 
-func NewStorage(id int) (*Storage, error) {
+func NewStorage(id int, async bool) (*Storage, error) {
 	stateFilename := fmt.Sprintf("raft_state_%d.bin", id)
 	logFilename := fmt.Sprintf("raft_log_%d.bin", id)
 
@@ -37,6 +38,7 @@ func NewStorage(id int) (*Storage, error) {
 		logFile:    lFile,
 		logWriter:  bufio.NewWriter(lFile),
 		logOffsets: []int64{},
+		async:      async,
 	}, nil
 }
 
@@ -53,7 +55,10 @@ func (s *Storage) SaveState(term int, votedFor int) error {
 		return err
 	}
 
-	return s.stateFile.Sync()
+	if !s.async {
+		return s.stateFile.Sync()
+	}
+	return nil
 }
 
 func (s *Storage) LoadState() (int, int, error) {
@@ -102,7 +107,10 @@ func (s *Storage) AppendEntry(entry LogEntry) error {
 	if err := s.logWriter.Flush(); err != nil {
 		return err
 	}
-	return s.logFile.Sync()
+	if !s.async {
+		return s.logFile.Sync()
+	}
+	return nil
 }
 
 func (s *Storage) AppendEntries(entries []LogEntry) error {
@@ -135,7 +143,10 @@ func (s *Storage) AppendEntries(entries []LogEntry) error {
 		return err
 	}
 	//return nil
-	return s.logFile.Sync()
+	if !s.async {
+		return s.logFile.Sync()
+	}
+	return nil
 }
 
 func (s *Storage) TruncateLog(index int) error {
@@ -164,7 +175,10 @@ func (s *Storage) TruncateLog(index int) error {
 
 	s.logWriter.Reset(s.logFile)
 
-	return s.logFile.Sync()
+	if !s.async {
+		return s.logFile.Sync()
+	}
+	return nil
 }
 
 func (s *Storage) LoadLog() ([]LogEntry, error) {

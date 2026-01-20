@@ -18,6 +18,12 @@ ifeq ($(DEBUG),true)
     DEBUG_FLAG := --debug
 endif
 
+ASYNC_LOG ?= false
+ASYNC_FLAG :=
+ifeq ($(ASYNC_LOG),true)
+    ASYNC_FLAG := --async-log
+endif
+
 ARGS ?=
 
 WORKERS ?= 1 2 4 8 16 32
@@ -29,7 +35,7 @@ TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
 .PHONY: help deploy build send-bin start kill clean benchmark bench-tool-build-linux send-bench-tool bench-disk-remote bench-net-remote get-metrics
 
 help:
-	@echo "Usage: make [target] [TARGET_ID=id] [DEBUG=true]"
+	@echo "Usage: make [target] [TARGET_ID=id] [DEBUG=true] [ASYNC_LOG=true]"
 	@echo "Targets: deploy, build, send-bin, start, kill, clean, benchmark"
 	@echo "Benchmark Tools:"
 	@echo "  make send-bench-tool"
@@ -118,7 +124,7 @@ start:
 		ssh -n -f $(USER)@$$ip "mkdir -p $(LOG_DIR) && cd $(PROJECT_DIR) && \
 		   (pkill -x $$bin || true) && \
 		   sleep 0.5 && \
-		   nohup ./$$bin start --id $$id --conf cluster.conf $(ARGS) $(DEBUG_FLAG) > $(LOG_DIR)/node_$$id.ans 2>&1 < /dev/null &"; \
+		   nohup ./$$bin start --id $$id --conf cluster.conf $(ARGS) $(DEBUG_FLAG) $(ASYNC_FLAG) > $(LOG_DIR)/node_$$id.ans 2>&1 < /dev/null &"; \
 	done
 	@echo "All start commands initiated."
 
@@ -161,7 +167,7 @@ benchmark:
 					\
 					$(MAKE) kill; \
 					sleep 2; \
-					$(MAKE) start ARGS="--read-batch-size $$rbatch --write-batch-size $$wbatch --workers $$workers --workload $$type"; \
+					$(MAKE) start ARGS="--read-batch-size $$rbatch --write-batch-size $$wbatch --workers $$workers --workload $$type $(ASYNC_FLAG)"; \
 					sleep 20; \
 					\
 					echo "--- Collecting results for Type=$$type, Workers=$$workers ---"; \
