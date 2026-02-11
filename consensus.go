@@ -128,7 +128,7 @@ QuorumReached:
 		parts := strings.Split(string(req.Command), " ")
 		resp := Response{success: true}
 		if len(parts) == 2 {
-			val, ok := r.StateMachine[parts[1]]
+			val, ok := r.sm.Data[parts[1]]
 			if ok {
 				resp.value = val
 			}

@@ -1,150 +1,208 @@
-USER         := tkt
-PROJECT_DIR  := ~/proj/raft
-BINARY_NAME  := raft_server
-CONFIG_FILE  := cluster.conf
-LOG_DIR      := $(PROJECT_DIR)/logs
+# ==============================================================================
+# Variables
+# ==============================================================================
 
-ALL_IDS := $(shell jq -r '.[].id' $(CONFIG_FILE))
-TARGET_ID ?= all
+# Application info
+BINARY_NAME := raft_bin
+
+# Configuration
+CONFIG_FILE := cluster.conf
+USER        := tkt
+REMOTE_DIR  := ~/proj/distsys/my_impl/raft
+LOG_DIR     := logs
+
+# Benchmark / Runtime args
+DEBUG       ?= false
+ASYNC_LOG   ?= false
+TARGET_ID   ?= all
+
+# Helper variables for flags
+DEBUG_FLAG :=
+ifeq ($(DEBUG),true)
+    DEBUG_FLAG := --debug
+endif
+
+ASYNC_FLAG :=
+ifeq ($(ASYNC_LOG),true)
+    ASYNC_FLAG := --async-log
+endif
+
+# Benchmark Params
+WORKERS     ?= 1 2 4 8 16 32
+READ_BATCH  ?= 1 2 4 8 16 32
+WRITE_BATCH ?= 1 2 4 8 16 32
+TYPE        ?= ycsb-a
+TIMESTAMP   := $(shell date +%Y%m%d_%H%M%S)
+
+# JQ extraction (requires jq)
+ALL_IDS := $(shell jq -r '.[].id' $(CONFIG_FILE) 2>/dev/null || echo "")
 ifeq ($(TARGET_ID),all)
     IDS := $(ALL_IDS)
 else
     IDS := $(TARGET_ID)
 endif
 
-DEBUG ?= false
-DEBUG_FLAG :=
-ifeq ($(DEBUG),true)
-    DEBUG_FLAG := --debug
-endif
+# ==============================================================================
+# Standard Go Targets (Local)
+# ==============================================================================
 
-ASYNC_LOG ?= false
-ASYNC_FLAG :=
-ifeq ($(ASYNC_LOG),true)
-    ASYNC_FLAG := --async-log
-endif
+.PHONY: all build test clean fmt vet tidy help
 
-ARGS ?=
+all: build
 
-WORKERS ?= 1 2 4 8 16 32
-READ_BATCH ?= 1 2 4 8 16 32
-WRITE_BATCH ?= 1 2 4 8 16 32
-TYPE    ?= ycsb-a
-TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
+# Build the binary locally
+build:
+	go build -o $(BINARY_NAME) .
 
-.PHONY: help deploy build send-bin start kill clean benchmark bench-tool-build-linux send-bench-tool bench-disk-remote bench-net-remote get-metrics
+# Run tests
+test:
+	go test -v ./...
+
+# Format code
+fmt:
+	go fmt ./...
+
+# Vet code
+vet:
+	go vet ./...
+
+# Tidy modules
+tidy:
+	go mod tidy
+
+# Clean local artifacts
+clean:
+	rm -f $(BINARY_NAME)
+	rm -f raft_log_*.bin raft_state_*.bin
+	rm -f *.log *.ans
+	rm -rf $(LOG_DIR)
 
 help:
 	@echo "Usage: make [target] [TARGET_ID=id] [DEBUG=true] [ASYNC_LOG=true]"
-	@echo "Targets: deploy, build, send-bin, start, kill, clean, benchmark"
-	@echo "Benchmark Tools:"
-	@echo "  make send-bench-tool"
-	@echo "  make bench-disk-remote ID=<id>"
-	@echo "  make bench-net-remote SERVER_ID=<id> CLIENT_ID=<id>"
-	@echo "  make get-metrics"
+	@echo ""
+	@echo "Local Development:"
+	@echo "  make build          Build binary locally"
+	@echo "  make test           Run tests"
+	@echo "  make clean          Clean local files"
+	@echo "  make local-start    Start 3-node cluster locally"
+	@echo "  make local-client   Run YCSB benchmark locally"
+	@echo "  make local-stop     Stop local cluster"
+	@echo ""
+	@echo "Remote Orchestration:"
+	@echo "  make deploy         Send config to remote nodes"
+	@echo "  make send-bin       Build Linux binary and send to remote"
+	@echo "  make remote-start   Start remote cluster"
+	@echo "  make remote-kill    Stop remote cluster"
+	@echo "  make benchmark      Run full benchmark suite"
 
+# ==============================================================================
+# Local Cluster Development
+# ==============================================================================
+
+.PHONY: local-start local-stop local-client local-test
+
+local-start: build clean
+	@echo "Starting 3-node Raft cluster (localhost)..."
+	@mkdir -p $(LOG_DIR)
+	@./$(BINARY_NAME) start --id 1 --conf $(CONFIG_FILE) --async-log $(DEBUG_FLAG) > $(LOG_DIR)/raft1.log 2>&1 &
+	@./$(BINARY_NAME) start --id 2 --conf $(CONFIG_FILE) --async-log $(DEBUG_FLAG) > $(LOG_DIR)/raft2.log 2>&1 &
+	@./$(BINARY_NAME) start --id 3 --conf $(CONFIG_FILE) --async-log $(DEBUG_FLAG) > $(LOG_DIR)/raft3.log 2>&1 &
+	@echo "Waiting 5s for leader election..."
+	@sleep 5
+	@echo "Cluster ready. Logs in $(LOG_DIR)/"
+
+local-stop:
+	@pkill -f $(BINARY_NAME) 2>/dev/null || true
+	@echo "Cluster stopped."
+
+LOCAL_WORKERS  ?= 256
+LOCAL_WORKLOAD ?= ycsb-a
+
+local-client: build
+	@echo "Running YCSB (workers=$(LOCAL_WORKERS), workload=$(LOCAL_WORKLOAD)) against all ports..."
+	@./$(BINARY_NAME) client --write-addr localhost:7000 --workers $(LOCAL_WORKERS) --workload $(LOCAL_WORKLOAD) > $(LOG_DIR)/client_c0.log 2>&1 &
+	 ./$(BINARY_NAME) client --write-addr localhost:7001 --workers $(LOCAL_WORKERS) --workload $(LOCAL_WORKLOAD) > $(LOG_DIR)/client_c1.log 2>&1 &
+	 ./$(BINARY_NAME) client --write-addr localhost:7002 --workers $(LOCAL_WORKERS) --workload $(LOCAL_WORKLOAD) > $(LOG_DIR)/client_c2.log 2>&1 &
+	 wait
+	@grep "^RESULT:" $(LOG_DIR)/client_*.log 2>/dev/null | grep -v ",0.00,0.00$$" || echo "(no leader found)"
+
+local-test: local-stop local-start
+	@sleep 2
+	$(MAKE) local-client
+	$(MAKE) local-stop
+
+# ==============================================================================
+# Remote Deployment & Orchestration
+# ==============================================================================
+
+.PHONY: deploy remote-build send-bin remote-start remote-kill remote-clean benchmark
+
+# Deploy config to remote nodes
 deploy:
 	@for id in $(IDS); do \
 		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 		echo "[$$ip] Distributing config..."; \
-		scp $(CONFIG_FILE) $(USER)@$$ip:$(PROJECT_DIR)/$(notdir $(CONFIG_FILE)) & \
+		scp $(CONFIG_FILE) $(USER)@$$ip:$(REMOTE_DIR)/$(notdir $(CONFIG_FILE)) & \
 	done; wait
 
-build:
+# Build directly on remote nodes (if they have Go installed)
+remote-build:
 	@for id in $(IDS); do \
 		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 		bin="$(BINARY_NAME)_$$id"; \
 		echo "[$$ip] Building $$bin..."; \
-		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && go build -o $$bin" & \
+		ssh $(USER)@$$ip "cd $(REMOTE_DIR) && go build -o $$bin" & \
 	done; wait
 
-bench-tool-build-linux:
-	cd disk_and_communication_latency_measure && GOOS=linux GOARCH=amd64 go build -o benchmark_linux main.go
-
-send-bench-tool: bench-tool-build-linux
-	@for id in $(ALL_IDS); do \
-		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-		echo "[$$ip] Sending benchmark tool..."; \
-		scp disk_and_communication_latency_measure/benchmark_linux $(USER)@$$ip:$(PROJECT_DIR)/benchmark_tool && \
-		ssh $(USER)@$$ip "chmod +x $(PROJECT_DIR)/benchmark_tool" & \
-	done; wait
-
-bench-disk-remote:
-	@if [ -z "$(ID)" ]; then echo "Usage: make bench-disk-remote ID=<id>"; exit 1; fi
-	@IP=$$(jq -r --arg i "$(ID)" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-	echo "Running Disk Benchmark on Node $(ID) ($$IP)..."; \
-	ssh $(USER)@$$IP "cd $(PROJECT_DIR) && ./benchmark_tool -mode disk"
-
-bench-net-remote:
-	@if [ -z "$(SERVER_ID)" ] || [ -z "$(CLIENT_ID)" ]; then echo "Usage: make bench-net-remote SERVER_ID=<id> CLIENT_ID=<id>"; exit 1; fi
-	@echo "--- Setting up Network Benchmark between Node $(SERVER_ID) and Node $(CLIENT_ID) ---"
-	@SERVER_IP=$$(jq -r --arg i "$(SERVER_ID)" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-	CLIENT_IP=$$(jq -r --arg i "$(CLIENT_ID)" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-	echo "Server: $$SERVER_IP | Client: $$CLIENT_IP"; \
-	echo "Starting Benchmark Server on Node $(SERVER_ID)..."; \
-	ssh -f $(USER)@$$SERVER_IP "cd $(PROJECT_DIR) && nohup ./benchmark_tool -mode server -id $(SERVER_ID) -config cluster.conf > /dev/null 2>&1 &"; \
-	sleep 2; \
-	echo "Running Benchmark Client on Node $(CLIENT_ID)..."; \
-	ssh $(USER)@$$CLIENT_IP "cd $(PROJECT_DIR) && ./benchmark_tool -mode client -target $(SERVER_ID) -config cluster.conf"; \
-	echo "Stopping Benchmark Server..."; \
-	ssh $(USER)@$$SERVER_IP "pkill benchmark_tool || true && cd $(PROJECT_DIR) && rm benchmark_tool && rm disk_and_communication_latency_measure/benchmark_linux"
-
-get-metrics: send-bench-tool
-	@echo "Selecting nodes for metrics..."
-	@NODE1=$$(jq -r '.[0].id' $(CONFIG_FILE)); \
-	NODE2=$$(jq -r '.[1].id' $(CONFIG_FILE)); \
-	echo "=== Running Disk Benchmark on Node $$NODE1 ==="; \
-	$(MAKE) bench-disk-remote ID=$$NODE1; \
-	if [ "$$NODE2" != "null" ]; then \
-		echo ""; \
-		echo "=== Running Network Benchmark (Server: Node $$NODE1, Client: Node $$NODE2) ==="; \
-		$(MAKE) bench-net-remote SERVER_ID=$$NODE1 CLIENT_ID=$$NODE2; \
-	else \
-		echo "Not enough nodes for network benchmark."; \
-	fi
-
-
-
+# Cross-compile locally and send to remote
 send-bin:
 	GOOS=linux GOARCH=amd64 go build -o /tmp/raft_tmp .
 	@for id in $(IDS); do \
 		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 		bin="$(BINARY_NAME)_$$id"; \
 		echo "[$$ip] Sending $$bin..."; \
-		scp /tmp/raft_tmp $(USER)@$$ip:$(PROJECT_DIR)/$$bin && \
-		ssh $(USER)@$$ip "chmod +x $(PROJECT_DIR)/$$bin" & \
+		scp /tmp/raft_tmp $(USER)@$$ip:$(REMOTE_DIR)/$$bin && \
+		ssh $(USER)@$$ip "chmod +x $(REMOTE_DIR)/$$bin" & \
 	done; wait
 	@rm /tmp/raft_tmp
 
-start:
+remote-start:
 	@for id in $(IDS); do \
 		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 		bin="$(BINARY_NAME)_$$id"; \
 		echo "[$$ip] Starting $$bin (ID: $$id)..."; \
-		ssh -n -f $(USER)@$$ip "mkdir -p $(LOG_DIR) && cd $(PROJECT_DIR) && \
-		   (pkill -x $$bin || true) && \
+		ssh -n -f $(USER)@$$ip "cd $(REMOTE_DIR) && mkdir -p $(LOG_DIR) && \
+		   (pkill -x $(BINARY_NAME)_$$id || true) && \
 		   sleep 0.5 && \
-		   nohup ./$$bin start --id $$id --conf cluster.conf $(ARGS) $(DEBUG_FLAG) $(ASYNC_FLAG) > $(LOG_DIR)/node_$$id.ans 2>&1 < /dev/null &"; \
+		   nohup ./$(BINARY_NAME)_$$id start --id $$id --conf cluster.conf $(ARGS) $(DEBUG_FLAG) $(ASYNC_FLAG) > $(REMOTE_DIR)/$(LOG_DIR)/node_$$id.ans 2>&1 < /dev/null &"; \
 	done
 	@echo "All start commands initiated."
 
-kill:
+remote-kill:
 	@for id in $(IDS); do \
 		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 		bin="$(BINARY_NAME)_$$id"; \
 		echo "[$$ip] Killing $$bin..."; \
-		ssh $(USER)@$$ip "pkill -x $$bin || echo 'Not running.'" & \
+		ssh $(USER)@$$ip "pkill -x $(BINARY_NAME)_$$id || echo 'Not running.'" & \
 	done; wait
 
-clean:
+remote-clean:
 	@for id in $(IDS); do \
 		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 		bin="$(BINARY_NAME)_$$id"; \
 		echo "[$$ip] Cleaning $$bin..."; \
-		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && rm -f $$bin logs/node_$$id.ans *.bin" results/* & \
+		ssh $(USER)@$$ip "cd $(REMOTE_DIR) && rm -f $$bin logs/node_$$id.ans *.bin" results/* & \
 	done; wait
 
+# ==============================================================================
+# Benchmarking Tools
+# ==============================================================================
+
+.PHONY: benchmark
+
+# Remote benchmark: starts servers, then runs internal client (based on tsujido) from one node
 benchmark:
+	$(MAKE) send-bin
 	@mkdir -p results
 	@echo "Starting benchmark..."
 	@for type in $(TYPE); do \
@@ -159,25 +217,35 @@ benchmark:
 					\
 					for id in $(IDS); do \
 						ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-						ssh -n $(USER)@$$ip "rm -f $(LOG_DIR)/node_$$id.ans"; \
+						ssh -n $(USER)@$$ip "rm -f $(REMOTE_DIR)/$(LOG_DIR)/node_$$id.ans"; \
 						if [ "$$type" != "ycsb-c" ]; then \
-							ssh -n $(USER)@$$ip "cd $(PROJECT_DIR) && rm -f raft_log_$$id.bin raft_state_$$id.bin"; \
+							ssh -n $(USER)@$$ip "cd $(REMOTE_DIR) && rm -f raft_log_$$id.bin raft_state_$$id.bin"; \
 						fi; \
-					done; \
+						done; \
 					\
-					$(MAKE) kill; \
+					$(MAKE) remote-kill; \
 					sleep 2; \
-					$(MAKE) start ARGS="--read-batch-size $$rbatch --write-batch-size $$wbatch --workers $$workers --workload $$type $(ASYNC_FLAG)"; \
+					$(MAKE) remote-start ARGS="--read-batch-size $$rbatch --write-batch-size $$wbatch $(ASYNC_FLAG)"; \
 					sleep 20; \
 					\
-					echo "--- Collecting results for Type=$$type, Workers=$$workers ---"; \
+					echo "--- Running client for Type=$$type, Workers=$$workers ---"; \
+					\
+					for id in $(IDS); do \
+						ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+						client_port=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .client_port' $(CONFIG_FILE)); \
+						ssh -n $(USER)@$$ip "cd $(REMOTE_DIR) && mkdir -p $(LOG_DIR) && \
+						   nohup ./$(BINARY_NAME)_$$id client --write-addr $$ip:$$client_port --workers $$workers --workload $$type \
+						   > $(REMOTE_DIR)/$(LOG_DIR)/client_$$id.ans 2>&1 < /dev/null" & \
+					done; wait; \
+					\
+					echo "--- Collecting results ---"; \
 					\
 					for id in $(IDS); do \
 						ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 						\
-						RES=$$(ssh -n $(USER)@$$ip "grep 'RESULT:' $(LOG_DIR)/node_$$id.ans | tail -n 1" | sed 's/.*RESULT://' | awk -F, '{print $$(NF-1) "," $$NF}' | tr -d ' \r\n'); \
+						RES=$$(ssh -n $(USER)@$$ip "grep 'RESULT:' $(REMOTE_DIR)/$(LOG_DIR)/client_$$id.ans | tail -n 1" | sed 's/.*RESULT://' | awk -F, '{print $$(NF-1) "," $$NF}' | tr -d ' \r\n'); \
 						\
-						if [ -n "$$RES" ]; then \
+						if [ -n "$$RES" ] && ! echo "$$RES" | grep -q "0.00,0.00$$"; then \
 							echo "$$type,$$rbatch,$$wbatch,$$workers,$$RES" >> "$$BENCH_FILE"; \
 						fi; \
 					done; \
@@ -186,5 +254,5 @@ benchmark:
 		done; \
 		echo "Finished workload: $$type. Results saved to $$BENCH_FILE"; \
 	done
-	@$(MAKE) kill
+	@$(MAKE) remote-kill
 	@echo "All benchmarks finished."

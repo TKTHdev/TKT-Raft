@@ -1,6 +1,8 @@
 package main
 
-import ()
+import (
+	"github.com/TKTHdev/tsujido"
+)
 
 func (r *Raft) applyCommand(command []byte, index int) {
 	commandStr := string(command)
@@ -8,51 +10,32 @@ func (r *Raft) applyCommand(command []byte, index int) {
 	if len(parts) == 0 {
 		return
 	}
+
+	var op tsujido.Operation
 	switch parts[0] {
 	case "SET":
 		if len(parts) != 3 {
 			return
 		}
-		r.mu.Lock()
-		key := parts[1]
-		value := parts[2]
-		r.StateMachine[key] = value
-		r.mu.Unlock()
-
+		op = tsujido.Operation{Type: tsujido.OpSet, Key: parts[1], Value: parts[2]}
 	case "GET":
 		if len(parts) != 2 {
 			return
 		}
-		r.mu.Lock()
-		key := parts[1]
-		_ = r.StateMachine[key] // In a real implementation, you might want to return this value.
-		r.mu.Unlock()
+		op = tsujido.Operation{Type: tsujido.OpGet, Key: parts[1]}
 	case "DELETE":
 		if len(parts) != 2 {
 			return
 		}
-		r.mu.Lock()
-		key := parts[1]
-
-		delete(r.StateMachine, key)
-		r.mu.Unlock()
+		op = tsujido.Operation{Type: tsujido.OpDelete, Key: parts[1]}
 	default:
-		// Unknown command
-	}
-	Response := Response{
-		success: true,
+		return
 	}
 
 	r.mu.Lock()
-	if parts[0] == "GET" && len(parts) == 2 {
-		key := parts[1]
-		value, exists := r.StateMachine[key]
-		if exists {
-			Response.value = value
-		} else {
-			Response.success = true
-		}
-	}
+	result := r.sm.Apply(op)
+	resp := Response{success: result.Success, value: result.Value}
+
 	if r.state == LEADER {
 		ch, ok := r.pendingResponses[index]
 		if ok {
@@ -62,7 +45,7 @@ func (r *Raft) applyCommand(command []byte, index int) {
 
 		if ok {
 			select {
-			case ch <- Response:
+			case ch <- resp:
 			default:
 			}
 		}

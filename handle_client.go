@@ -1,10 +1,56 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/TKTHdev/tsujido"
 )
+
+// RaftHandler implements tsujido.RequestHandler.
+// It converts incoming Operations to internal commands and submits them through the Raft pipeline.
+type RaftHandler struct {
+	r *Raft
+}
+
+func (h *RaftHandler) HandleRequest(ctx context.Context, op tsujido.Operation) (tsujido.Result, error) {
+	if h.r.state != LEADER {
+		return tsujido.Result{}, fmt.Errorf("not leader")
+	}
+
+	var cmd string
+	switch op.Type {
+	case tsujido.OpGet:
+		cmd = fmt.Sprintf("GET %s", op.Key)
+	case tsujido.OpSet:
+		cmd = fmt.Sprintf("SET %s %s", op.Key, op.Value)
+	case tsujido.OpDelete:
+		cmd = fmt.Sprintf("DELETE %s", op.Key)
+	}
+
+	req := ClientRequest{
+		Command: []byte(cmd),
+		RespCh:  make(chan Response, 1),
+	}
+
+	select {
+	case <-ctx.Done():
+		return tsujido.Result{}, ctx.Err()
+	case h.r.ReqCh <- req:
+	}
+
+	select {
+	case <-ctx.Done():
+		return tsujido.Result{}, ctx.Err()
+	case resp := <-req.RespCh:
+		return tsujido.Result{
+			Success: resp.success,
+			Value:   resp.value,
+		}, nil
+	}
+}
 
 const (
 	READ_LINGER_TIME  = 15 * time.Millisecond

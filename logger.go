@@ -74,13 +74,13 @@ func (r *Raft) printLogEntriesAsString() string {
 
 func (r *Raft) printStateMachineAsStringLocked() string {
 	smStr := "{"
-	keys := make([]string, 0, len(r.StateMachine))
-	for k := range r.StateMachine {
+	keys := make([]string, 0, len(r.sm.Data))
+	for k := range r.sm.Data {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for i, k := range keys {
-		v := r.StateMachine[k]
+		v := r.sm.Data[k]
 		smStr += fmt.Sprintf("%s: %s", k, v)
 		if i != len(keys)-1 {
 			smStr += ", "

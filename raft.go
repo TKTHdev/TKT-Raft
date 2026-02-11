@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/rpc"
 	"sync"
+
+	"github.com/TKTHdev/tsujido"
 )
 
 const (
@@ -22,6 +24,11 @@ type ClientRequest struct {
 	RespCh  chan Response
 }
 
+type Response struct {
+	success bool
+	value   string
+}
+
 type Raft struct {
 	//net rpc conn
 	currentTerm      int
@@ -37,7 +44,7 @@ type Raft struct {
 	heartBeatCh      chan bool
 	clusterSize      int32
 	StateMachineCh   chan []byte
-	StateMachine     map[string]string
+	sm               *tsujido.KVStore
 	ReqCh            chan ClientRequest
 	ReadCh           chan []ClientRequest
 	pendingResponses map[int]chan Response
@@ -49,12 +56,11 @@ type Raft struct {
 	newLogEntryCh    chan bool
 	writeBatchSize   int
 	readBatchSize    int
-	workers          int
+	clientServer     *tsujido.Server
 	debug            bool
-	workload         int
 }
 
-func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, workers int, debug bool, workload int, asyncLog bool) *Raft {
+func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, debug bool, asyncLog bool, clientAddr string) *Raft {
 	peerIPPort := parseConfig(confPath)
 	storage, err := NewStorage(id, asyncLog)
 	if err != nil {
@@ -86,7 +92,7 @@ func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, wor
 		heartBeatCh:      make(chan bool, 1),
 		clusterSize:      int32(len(peerIPPort)),
 		StateMachineCh:   make(chan []byte),
-		StateMachine:     make(map[string]string),
+		sm:               tsujido.NewKVStore(),
 		ReqCh:            make(chan ClientRequest, 5000),
 		ReadCh:           make(chan []ClientRequest, 500),
 		pendingResponses: make(map[int]chan Response),
@@ -97,9 +103,7 @@ func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, wor
 		newLogEntryCh:    make(chan bool, 1),
 		writeBatchSize:   writeBatchSize,
 		readBatchSize:    readBatchSize,
-		workers:          workers,
 		debug:            debug,
-		workload:         workload,
 	}
 	r.commitCond = sync.NewCond(&r.mu)
 	for peerID, _ := range peerIPPort {
@@ -107,9 +111,11 @@ func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, wor
 		r.matchIndex[peerID] = 0
 	}
 
+	handler := &RaftHandler{r: r}
+	r.clientServer = tsujido.NewServer(clientAddr, handler)
+
 	go r.listenRPC(peerIPPort)
-	//go r.internalClient()
-	go r.concClient()
+	go r.clientServer.ListenAndServe()
 	go r.handleClientRequest()
 	go r.runApplier()
 	return r
