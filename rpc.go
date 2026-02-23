@@ -1,12 +1,57 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 const (
 	AppendEntries = "Raft.AppendEntries"
 	RequestVote   = "Raft.RequestVote"
 	Read          = "Raft.Read"
+	Execute       = "Raft.Execute"
 )
+
+type ExecuteArgs struct {
+	Command []byte
+}
+
+type ExecuteReply struct {
+	Success  bool
+	Value    string
+	IsLeader bool
+}
+
+func (r *Raft) Execute(args *ExecuteArgs, reply *ExecuteReply) error {
+	r.mu.RLock()
+	isLeader := r.state == LEADER
+	r.mu.RUnlock()
+
+	if !isLeader {
+		reply.IsLeader = false
+		return nil
+	}
+
+	reply.IsLeader = true
+	req := ClientRequest{
+		Command: args.Command,
+		RespCh:  make(chan Response, 1),
+	}
+
+	select {
+	case r.ReqCh <- req:
+	case <-time.After(5 * time.Second):
+		return nil
+	}
+
+	select {
+	case resp := <-req.RespCh:
+		reply.Success = resp.success
+		reply.Value = resp.value
+	case <-time.After(5 * time.Second):
+	}
+	return nil
+}
 
 const (
 	NOTVOTED = -2

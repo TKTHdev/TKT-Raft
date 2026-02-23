@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+type Response struct {
+	success bool
+	value   string
+}
+
 const (
 	READ_LINGER_TIME  = 15 * time.Millisecond
 	WRITE_LINGER_TIME = 15 * time.Millisecond

@@ -1,5 +1,5 @@
 USER         := tkt
-PROJECT_DIR  := ~/proj/raft
+PROJECT_DIR  := ~/proj/distsys/my_impl/raft
 BINARY_NAME  := raft_server
 CONFIG_FILE  := cluster.conf
 LOG_DIR      := $(PROJECT_DIR)/logs
@@ -26,22 +26,43 @@ endif
 
 ARGS ?=
 
-WORKERS ?= 1 2 4 8 16 32
-READ_BATCH ?= 1 2 4 8 16 32
+# Client-side benchmark parameters
+WORKERS     ?= 1 2 4 8 16 32
+KEYS        ?= 6
+TYPE        ?= ycsb-a
+
+# Server-side benchmark parameters
+READ_BATCH  ?= 1 2 4 8 16 32
 WRITE_BATCH ?= 1 2 4 8 16 32
-TYPE    ?= ycsb-a
-TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
+
+CLIENT_NODE := $(shell jq -r '.[0].id' $(CONFIG_FILE))
+TIMESTAMP   := $(shell date +%Y%m%d_%H%M%S)
 
 .PHONY: help deploy build send-bin start kill clean benchmark bench-tool-build-linux send-bench-tool bench-disk-remote bench-net-remote get-metrics
 
 help:
-	@echo "Usage: make [target] [TARGET_ID=id] [DEBUG=true] [ASYNC_LOG=true]"
-	@echo "Targets: deploy, build, send-bin, start, kill, clean, benchmark"
-	@echo "Benchmark Tools:"
-	@echo "  make send-bench-tool"
-	@echo "  make bench-disk-remote ID=<id>"
-	@echo "  make bench-net-remote SERVER_ID=<id> CLIENT_ID=<id>"
-	@echo "  make get-metrics"
+	@echo "Usage: make [target] [options]"
+	@echo ""
+	@echo "Node targets:"
+	@echo "  deploy         Distribute cluster.conf to all nodes"
+	@echo "  send-bin       Cross-compile and send binary to all nodes"
+	@echo "  start          Start Raft server nodes [TARGET_ID=id] [DEBUG=true] [ASYNC_LOG=true]"
+	@echo "  kill           Kill Raft server processes [TARGET_ID=id]"
+	@echo "  clean          Remove binaries and logs from nodes"
+	@echo ""
+	@echo "Benchmark:"
+	@echo "  benchmark      Run full benchmark suite (server + client)"
+	@echo "    TYPE         Workload type(s): ycsb-a ycsb-b ycsb-c  (default: ycsb-a)"
+	@echo "    WORKERS      Client worker counts to sweep  (default: 1 2 4 8 16 32)"
+	@echo "    KEYS         Number of keys  (default: 6)"
+	@echo "    READ_BATCH   Server read batch sizes to sweep"
+	@echo "    WRITE_BATCH  Server write batch sizes to sweep"
+	@echo "    ASYNC_LOG    Enable async log writes (default: false)"
+	@echo ""
+	@echo "Infrastructure metrics:"
+	@echo "  get-metrics"
+	@echo "  bench-disk-remote   ID=<id>"
+	@echo "  bench-net-remote    SERVER_ID=<id> CLIENT_ID=<id>"
 
 deploy:
 	@for id in $(IDS); do \
@@ -57,53 +78,6 @@ build:
 		echo "[$$ip] Building $$bin..."; \
 		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && go build -o $$bin" & \
 	done; wait
-
-bench-tool-build-linux:
-	cd disk_and_communication_latency_measure && GOOS=linux GOARCH=amd64 go build -o benchmark_linux main.go
-
-send-bench-tool: bench-tool-build-linux
-	@for id in $(ALL_IDS); do \
-		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-		echo "[$$ip] Sending benchmark tool..."; \
-		scp disk_and_communication_latency_measure/benchmark_linux $(USER)@$$ip:$(PROJECT_DIR)/benchmark_tool && \
-		ssh $(USER)@$$ip "chmod +x $(PROJECT_DIR)/benchmark_tool" & \
-	done; wait
-
-bench-disk-remote:
-	@if [ -z "$(ID)" ]; then echo "Usage: make bench-disk-remote ID=<id>"; exit 1; fi
-	@IP=$$(jq -r --arg i "$(ID)" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-	echo "Running Disk Benchmark on Node $(ID) ($$IP)..."; \
-	ssh $(USER)@$$IP "cd $(PROJECT_DIR) && ./benchmark_tool -mode disk"
-
-bench-net-remote:
-	@if [ -z "$(SERVER_ID)" ] || [ -z "$(CLIENT_ID)" ]; then echo "Usage: make bench-net-remote SERVER_ID=<id> CLIENT_ID=<id>"; exit 1; fi
-	@echo "--- Setting up Network Benchmark between Node $(SERVER_ID) and Node $(CLIENT_ID) ---"
-	@SERVER_IP=$$(jq -r --arg i "$(SERVER_ID)" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-	CLIENT_IP=$$(jq -r --arg i "$(CLIENT_ID)" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-	echo "Server: $$SERVER_IP | Client: $$CLIENT_IP"; \
-	echo "Starting Benchmark Server on Node $(SERVER_ID)..."; \
-	ssh -f $(USER)@$$SERVER_IP "cd $(PROJECT_DIR) && nohup ./benchmark_tool -mode server -id $(SERVER_ID) -config cluster.conf > /dev/null 2>&1 &"; \
-	sleep 2; \
-	echo "Running Benchmark Client on Node $(CLIENT_ID)..."; \
-	ssh $(USER)@$$CLIENT_IP "cd $(PROJECT_DIR) && ./benchmark_tool -mode client -target $(SERVER_ID) -config cluster.conf"; \
-	echo "Stopping Benchmark Server..."; \
-	ssh $(USER)@$$SERVER_IP "pkill benchmark_tool || true && cd $(PROJECT_DIR) && rm benchmark_tool && rm disk_and_communication_latency_measure/benchmark_linux"
-
-get-metrics: send-bench-tool
-	@echo "Selecting nodes for metrics..."
-	@NODE1=$$(jq -r '.[0].id' $(CONFIG_FILE)); \
-	NODE2=$$(jq -r '.[1].id' $(CONFIG_FILE)); \
-	echo "=== Running Disk Benchmark on Node $$NODE1 ==="; \
-	$(MAKE) bench-disk-remote ID=$$NODE1; \
-	if [ "$$NODE2" != "null" ]; then \
-		echo ""; \
-		echo "=== Running Network Benchmark (Server: Node $$NODE1, Client: Node $$NODE2) ==="; \
-		$(MAKE) bench-net-remote SERVER_ID=$$NODE1 CLIENT_ID=$$NODE2; \
-	else \
-		echo "Not enough nodes for network benchmark."; \
-	fi
-
-
 
 send-bin:
 	GOOS=linux GOARCH=amd64 go build -o /tmp/raft_tmp .
@@ -144,47 +118,103 @@ clean:
 		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && rm -f $$bin logs/node_$$id.ans *.bin" results/* & \
 	done; wait
 
+# -----------------------------------------------------------------------
+# benchmark: sweep server batch sizes × client workers, collect RESULT:
+#
+# Layout:
+#   outer loops (type, rbatch, wbatch) → restart servers
+#   inner loop  (workers)              → restart client only
+# -----------------------------------------------------------------------
 benchmark:
 	@mkdir -p results
-	@echo "Starting benchmark..."
-	@for type in $(TYPE); do \
+	@CLIENT_IP=$$(jq -r --arg i "$(CLIENT_NODE)" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+	CLIENT_BIN="$(BINARY_NAME)_$(CLIENT_NODE)"; \
+	\
+	for type in $(TYPE); do \
 		BENCH_FILE="results/benchmark-$(TIMESTAMP)-$$type.csv"; \
-		echo "Initializing $$BENCH_FILE ..."; \
-		echo "Workload,ReadBatch,WriteBatch,Workers,Throughput(ops/sec),Latency(ms)" > "$$BENCH_FILE"; \
+		echo "Workload,ReadBatch,WriteBatch,Workers,Keys,Throughput(ops/sec),Latency(ms)" > "$$BENCH_FILE"; \
+		echo "=== Workload: $$type ==="; \
 		\
 		for rbatch in $(READ_BATCH); do \
 			for wbatch in $(WRITE_BATCH); do \
+				echo "--- ReadBatch=$$rbatch WriteBatch=$$wbatch ---"; \
+				\
+				for id in $(ALL_IDS); do \
+					ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+					ssh -n $(USER)@$$ip "rm -f $(LOG_DIR)/node_$$id.ans $(PROJECT_DIR)/raft_log_$$id.bin $(PROJECT_DIR)/raft_state_$$id.bin" & \
+				done; wait; \
+				\
+				$(MAKE) kill; \
+				sleep 1; \
+				$(MAKE) start ARGS="--read-batch-size $$rbatch --write-batch-size $$wbatch $(ASYNC_FLAG)"; \
+				sleep 8; \
+				\
 				for workers in $(WORKERS); do \
-					echo "Running benchmark: Type=$$type, ReadBatch=$$rbatch, WriteBatch=$$wbatch, Workers=$$workers"; \
+					echo "  Running client: workers=$$workers keys=$(KEYS)..."; \
+					RES=$$(ssh $(USER)@$$CLIENT_IP \
+						"cd $(PROJECT_DIR) && ./$$CLIENT_BIN client \
+						--conf cluster.conf \
+						--workers $$workers \
+						--workload $$type \
+						--keys $(KEYS)" \
+					| grep 'RESULT:' | tail -n 1 | sed 's/.*RESULT://'); \
 					\
-					for id in $(IDS); do \
-						ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-						ssh -n $(USER)@$$ip "rm -f $(LOG_DIR)/node_$$id.ans"; \
-						if [ "$$type" != "ycsb-c" ]; then \
-							ssh -n $(USER)@$$ip "cd $(PROJECT_DIR) && rm -f raft_log_$$id.bin raft_state_$$id.bin"; \
-						fi; \
-					done; \
-					\
-					$(MAKE) kill; \
-					sleep 2; \
-					$(MAKE) start ARGS="--read-batch-size $$rbatch --write-batch-size $$wbatch --workers $$workers --workload $$type $(ASYNC_FLAG)"; \
-					sleep 20; \
-					\
-					echo "--- Collecting results for Type=$$type, Workers=$$workers ---"; \
-					\
-					for id in $(IDS); do \
-						ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
-						\
-						RES=$$(ssh -n $(USER)@$$ip "grep 'RESULT:' $(LOG_DIR)/node_$$id.ans | tail -n 1" | sed 's/.*RESULT://' | awk -F, '{print $$(NF-1) "," $$NF}' | tr -d ' \r\n'); \
-						\
-						if [ -n "$$RES" ]; then \
-							echo "$$type,$$rbatch,$$wbatch,$$workers,$$RES" >> "$$BENCH_FILE"; \
-						fi; \
-					done; \
+					if [ -n "$$RES" ]; then \
+						THROUGHPUT=$$(echo "$$RES" | cut -d, -f4); \
+						LATENCY=$$(echo "$$RES"    | cut -d, -f5); \
+						echo "$$type,$$rbatch,$$wbatch,$$workers,$(KEYS),$$THROUGHPUT,$$LATENCY" >> "$$BENCH_FILE"; \
+						echo "  -> Throughput=$$THROUGHPUT ops/s  Latency=$$LATENCY ms"; \
+					else \
+						echo "  -> No result collected (client may have failed to reach leader)"; \
+					fi; \
 				done; \
+				\
+				$(MAKE) kill; \
+				sleep 1; \
 			done; \
 		done; \
-		echo "Finished workload: $$type. Results saved to $$BENCH_FILE"; \
+		echo "Results saved to $$BENCH_FILE"; \
 	done
-	@$(MAKE) kill
 	@echo "All benchmarks finished."
+
+# -----------------------------------------------------------------------
+# Infrastructure metrics
+# -----------------------------------------------------------------------
+bench-tool-build-linux:
+	cd disk_and_communication_latency_measure && GOOS=linux GOARCH=amd64 go build -o benchmark_linux main.go
+
+send-bench-tool: bench-tool-build-linux
+	@for id in $(ALL_IDS); do \
+		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+		echo "[$$ip] Sending benchmark tool..."; \
+		scp disk_and_communication_latency_measure/benchmark_linux $(USER)@$$ip:$(PROJECT_DIR)/benchmark_tool && \
+		ssh $(USER)@$$ip "chmod +x $(PROJECT_DIR)/benchmark_tool" & \
+	done; wait
+
+bench-disk-remote:
+	@if [ -z "$(ID)" ]; then echo "Usage: make bench-disk-remote ID=<id>"; exit 1; fi
+	@IP=$$(jq -r --arg i "$(ID)" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+	echo "Running Disk Benchmark on Node $(ID) ($$IP)..."; \
+	ssh $(USER)@$$IP "cd $(PROJECT_DIR) && ./benchmark_tool -mode disk"
+
+bench-net-remote:
+	@if [ -z "$(SERVER_ID)" ] || [ -z "$(CLIENT_ID)" ]; then echo "Usage: make bench-net-remote SERVER_ID=<id> CLIENT_ID=<id>"; exit 1; fi
+	@echo "--- Setting up Network Benchmark between Node $(SERVER_ID) and Node $(CLIENT_ID) ---"
+	@SERVER_IP=$$(jq -r --arg i "$(SERVER_ID)" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+	CLIENT_IP=$$(jq -r --arg i "$(CLIENT_ID)" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
+	echo "Server: $$SERVER_IP | Client: $$CLIENT_IP"; \
+	ssh -f $(USER)@$$SERVER_IP "cd $(PROJECT_DIR) && nohup ./benchmark_tool -mode server -id $(SERVER_ID) -config cluster.conf > /dev/null 2>&1 &"; \
+	sleep 2; \
+	ssh $(USER)@$$CLIENT_IP "cd $(PROJECT_DIR) && ./benchmark_tool -mode client -target $(SERVER_ID) -config cluster.conf"; \
+	ssh $(USER)@$$SERVER_IP "pkill benchmark_tool || true && rm -f $(PROJECT_DIR)/benchmark_tool $(PROJECT_DIR)/../disk_and_communication_latency_measure/benchmark_linux"
+
+get-metrics: send-bench-tool
+	@NODE1=$$(jq -r '.[0].id' $(CONFIG_FILE)); \
+	NODE2=$$(jq -r '.[1].id' $(CONFIG_FILE)); \
+	echo "=== Disk Benchmark on Node $$NODE1 ==="; \
+	$(MAKE) bench-disk-remote ID=$$NODE1; \
+	if [ "$$NODE2" != "null" ]; then \
+		echo ""; \
+		echo "=== Network Benchmark (Server: Node $$NODE1, Client: Node $$NODE2) ==="; \
+		$(MAKE) bench-net-remote SERVER_ID=$$NODE1 CLIENT_ID=$$NODE2; \
+	fi
