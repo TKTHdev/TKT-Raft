@@ -21,6 +21,7 @@ func main() {
 					readBatchSize := c.Int("read-batch-size")
 					workers := c.Int("workers")
 					debug := c.Bool("debug")
+					asyncLog := c.Bool("async-log")
 					workloadStr := c.String("workload")
 					workload := 50
 					switch workloadStr {
@@ -31,7 +32,7 @@ func main() {
 					case "ycsb-c":
 						workload = 0
 					}
-					r := NewRaft(id, conf, writeBatchSize, readBatchSize, workers, debug, workload)
+					r := NewRaft(id, conf, writeBatchSize, readBatchSize, workers, debug, workload, asyncLog)
 					r.Run()
 					return nil
 				},
@@ -62,6 +63,11 @@ func main() {
 					&cli.BoolFlag{
 						Name:  "debug",
 						Usage: "Enable debug logging",
+						Value: false,
+					},
+					&cli.BoolFlag{
+						Name:  "async-log",
+						Usage: "Enable asynchronous disk writes",
 						Value: false,
 					},
 					&cli.StringFlag{
