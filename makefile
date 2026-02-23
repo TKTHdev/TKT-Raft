@@ -76,11 +76,11 @@ build:
 		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 		bin="$(BINARY_NAME)_$$id"; \
 		echo "[$$ip] Building $$bin..."; \
-		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && go build -o $$bin" & \
+		ssh $(USER)@$$ip "cd $(PROJECT_DIR) && go build -o $$bin ./cmd" & \
 	done; wait
 
 send-bin:
-	GOOS=linux GOARCH=amd64 go build -o /tmp/raft_tmp .
+	GOOS=linux GOARCH=amd64 go build -o /tmp/raft_tmp ./cmd
 	@for id in $(IDS); do \
 		ip=$$(jq -r --arg i "$$id" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 		bin="$(BINARY_NAME)_$$id"; \

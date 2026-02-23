@@ -1,10 +1,9 @@
-package main
+package raft
 
 import (
 	"fmt"
 	"log"
 	"math/rand"
-	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -122,18 +121,9 @@ func (r *Raft) processReadBatch(reqs []ClientRequest) {
 	}
 
 QuorumReached:
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	for _, req := range reqs {
-		parts := strings.Split(string(req.Command), " ")
-		resp := Response{success: true}
-		if len(parts) == 2 {
-			val, ok := r.StateMachine[parts[1]]
-			if ok {
-				resp.value = val
-			}
-		}
-		req.RespCh <- resp
+		result := r.sm.Query(req.Command)
+		req.RespCh <- Response{success: true, value: result}
 	}
 }
 

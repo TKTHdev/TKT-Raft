@@ -1,4 +1,4 @@
-package main
+package raft
 
 import (
 	"fmt"
@@ -18,7 +18,7 @@ type ExecuteArgs struct {
 
 type ExecuteReply struct {
 	Success  bool
-	Value    string
+	Value    []byte
 	IsLeader bool
 	LeaderID int // -1 if unknown
 }

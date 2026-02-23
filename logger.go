@@ -1,9 +1,8 @@
-package main
+package raft
 
 import (
 	"fmt"
 	"log"
-	"sort"
 )
 
 const (
@@ -44,7 +43,6 @@ func (r *Raft) logPutLocked(msg string, colour int) {
 		color = "\033[0m"
 	}
 	reset := "\033[0m"
-	//print Node ID, Term, State, leaderID, votedFor
 	stateStr := ""
 	switch r.state {
 	case LEADER:
@@ -56,7 +54,7 @@ func (r *Raft) logPutLocked(msg string, colour int) {
 	default:
 		stateStr = "UNKNOWN"
 	}
-	logPrefix := fmt.Sprintf("[Node %d | Term %d | SM %s | Role %s | VotedFor %d] ", r.me, r.currentTerm, r.printStateMachineAsStringLocked(), stateStr, r.votedFor)
+	logPrefix := fmt.Sprintf("[Node %d | Term %d | Role %s | VotedFor %d] ", r.me, r.currentTerm, stateStr, r.votedFor)
 	log.Printf("%s%s%s", color, logPrefix+msg, reset)
 }
 
@@ -70,22 +68,4 @@ func (r *Raft) printLogEntriesAsString() string {
 	}
 	logStr += "]"
 	return logStr
-}
-
-func (r *Raft) printStateMachineAsStringLocked() string {
-	smStr := "{"
-	keys := make([]string, 0, len(r.StateMachine))
-	for k := range r.StateMachine {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for i, k := range keys {
-		v := r.StateMachine[k]
-		smStr += fmt.Sprintf("%s: %s", k, v)
-		if i != len(keys)-1 {
-			smStr += ", "
-		}
-	}
-	smStr += "}"
-	return smStr
 }

@@ -1,4 +1,4 @@
-package main
+package raft
 
 import (
 	"fmt"
@@ -12,6 +12,15 @@ const (
 	CANDIDATE
 )
 
+type Config struct {
+	ID             int
+	ConfPath       string
+	WriteBatchSize int // default: 128
+	ReadBatchSize  int // default: 128
+	Debug          bool
+	AsyncLog       bool
+}
+
 type LogEntry struct {
 	Command []byte
 	Term    int
@@ -23,7 +32,6 @@ type ClientRequest struct {
 }
 
 type Raft struct {
-	//net rpc conn
 	currentTerm      int
 	votedFor         int
 	log              []LogEntry
@@ -36,8 +44,7 @@ type Raft struct {
 	rpcConns         map[int]*rpc.Client
 	heartBeatCh      chan bool
 	clusterSize      int32
-	StateMachineCh   chan []byte
-	StateMachine     map[string]string
+	sm               StateMachine
 	ReqCh            chan ClientRequest
 	ReadCh           chan []ClientRequest
 	pendingResponses map[int]chan Response
@@ -45,17 +52,26 @@ type Raft struct {
 	peerIPPort       map[int]string
 	storage          *Storage
 	commitCond       *sync.Cond
-	replicating    map[int]bool
-	newLogEntryCh  chan bool
-	writeBatchSize int
-	readBatchSize  int
-	debug          bool
-	leaderID       int
+	replicating      map[int]bool
+	newLogEntryCh    chan bool
+	writeBatchSize   int
+	readBatchSize    int
+	debug            bool
+	leaderID         int
 }
 
-func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, debug bool, asyncLog bool) *Raft {
-	peerIPPort := parseConfig(confPath)
-	storage, err := NewStorage(id, asyncLog)
+func New(cfg Config, sm StateMachine) *Raft {
+	writeBatchSize := cfg.WriteBatchSize
+	if writeBatchSize == 0 {
+		writeBatchSize = 128
+	}
+	readBatchSize := cfg.ReadBatchSize
+	if readBatchSize == 0 {
+		readBatchSize = 128
+	}
+
+	peerIPPort := ParseConfig(cfg.ConfPath)
+	storage, err := NewStorage(cfg.ID, cfg.AsyncLog)
 	if err != nil {
 		panic(err)
 	}
@@ -79,13 +95,12 @@ func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, deb
 		lastApplied:      -1,
 		nextIndex:        make(map[int]int),
 		matchIndex:       make(map[int]int),
-		me:               id,
+		me:               cfg.ID,
 		state:            FOLLOWER,
 		rpcConns:         make(map[int]*rpc.Client),
 		heartBeatCh:      make(chan bool, 1),
 		clusterSize:      int32(len(peerIPPort)),
-		StateMachineCh:   make(chan []byte),
-		StateMachine:     make(map[string]string),
+		sm:               sm,
 		ReqCh:            make(chan ClientRequest, 5000),
 		ReadCh:           make(chan []ClientRequest, 500),
 		pendingResponses: make(map[int]chan Response),
@@ -94,13 +109,13 @@ func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, deb
 		storage:          storage,
 		replicating:      make(map[int]bool),
 		newLogEntryCh:    make(chan bool, 1),
-		writeBatchSize: writeBatchSize,
-		readBatchSize:  readBatchSize,
-		debug:          debug,
-		leaderID:       -1,
+		writeBatchSize:   writeBatchSize,
+		readBatchSize:    readBatchSize,
+		debug:            cfg.Debug,
+		leaderID:         -1,
 	}
 	r.commitCond = sync.NewCond(&r.mu)
-	for peerID, _ := range peerIPPort {
+	for peerID := range peerIPPort {
 		r.nextIndex[peerID] = len(fullLog)
 		r.matchIndex[peerID] = 0
 	}

@@ -1,4 +1,4 @@
-package main
+package raft
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 
 type Response struct {
 	success bool
-	value   string
+	value   []byte
 }
 
 const (

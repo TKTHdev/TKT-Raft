@@ -1,4 +1,4 @@
-package main
+package raft
 
 import (
 	"encoding/json"
@@ -13,7 +13,7 @@ type Node struct {
 	Port int    `json:"port"`
 }
 
-func parseConfig(confPath string) map[int]string {
+func ParseConfig(confPath string) map[int]string {
 	file, err := ioutil.ReadFile(confPath)
 	if err != nil {
 		log.Fatalf("Failed to read config file: %v", err)
