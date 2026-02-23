@@ -5,165 +5,172 @@
 ## Overview
 - Simple implementation of Raft Consensus Algorithm
 - Written in Go
+- Usable as a Go library (`package raft`) with a pluggable `StateMachine` interface
 
 ## Features
-- What are implemented
-    - Leader election
-    - Log replication
-    - Safety (term, commit index, etc.)
+- Leader election
+- Log replication
+- Safety (term, commit index, etc.)
+- Pluggable state machine — bring your own `Apply`/`Query` implementation
+- Built-in KV store (`KVStore`) for SET / GET / DELETE workloads
+- Persistent storage (WAL for log, binary state file)
+- Read-path optimization via quorum-read batching
 
+---
 
-### Raft Node Overview
-The core of the system is the `Raft` struct defined in `raft.go`. Each node operates as a standalone server that communicates with peers via RPC.
-- **State Management:** The node maintains standard Raft state: `currentTerm`, `votedFor`, `log`, `commitIndex`, and `lastApplied`.
-- **Roles:** The node transitions between `FOLLOWER`, `CANDIDATE`, and `LEADER` states, managed by the main event loop in `consensus.go`.
+### Directory Structure
 
-### Key Modules & Relationships
-*   **`raft.go`**: Defines the `Raft` struct and initializes the node (`NewRaft`). It holds the central state, including the log and RPC connections.
-*   **`consensus.go`**: Contains the main `Run()` loop. It handles the core lifecycle:
-    *   **Follower:** Waits for heartbeats or election timeout (`doFollower`).
-    *   **Leader:** Sends periodic heartbeats (`doLeader`) and updates the `commitIndex`.
-    *   **Candidate:** Manages the election process (`startElection`).
-*   **`rpc.go`**: Implements the Raft RPC handlers (`RequestVote`, `AppendEntries`) and the client-side logic to send these RPCs to peers.
-*   **`replication.go`**: Handles the ingestion of new commands from the internal client (`handleClientRequest`) and appends them to the local log.
-*   **`statemachine.go`**: Implements the application state logic (`applyCommand`). It parses commands (`SET`, `GET`, `DELETE`) and updates an in-memory `map[string]string`.
-*   **`conns.go`**: Manages network connectivity. It handles TCP listeners (`listenRPC`) and establishes outgoing RPC connections (`dialRPCToPeer`).
-*   **`config.go`**: Parses the `cluster.conf` file to map Node IDs to IP:Port addresses.
-*   **`client.go`**: An **internal load generator** that simulates client traffic by randomly creating commands and sending them to the leader's processing channel.
-
-### Storage & Transport Abstractions
-*   **Storage:** **In-Memory Only.** The Raft log (`[]LogEntry`) and the State Machine (`map[string]string`) are stored entirely in memory within the `Raft` struct. There is no persistence to disk implemented in the provided code (no WAL or snapshotting).
-*   **Transport:** **Go `net/rpc`.** The implementation uses Go's standard `net/rpc` package over TCP. Nodes dial each other based on the addresses defined in `cluster.conf`.
-
-## How to build and run
-
-### Build
-You can build the project using the standard Go toolchain.
-```bash
-go build -o raft_server .
+```
+raft/                  ← package raft  (library)
+  raft.go              ← Config struct, New(), Raft struct
+  consensus.go         ← Run(), election, replication loop
+  rpc.go               ← RPC types and handlers
+  handle_client.go     ← Request batching, Response type
+  statemachine.go      ← StateMachine interface + KVStore
+  storage.go           ← WAL / state persistence
+  conns.go             ← TCP RPC listener & dialer
+  config.go            ← cluster.conf parser (ParseConfig)
+  logger.go            ← Debug logging
+  cmd/                 ← package main  (binary)
+    main.go            ← CLI entry point (urfave/cli)
+    client.go          ← Benchmark client
 ```
 
-### Run a Single Node
-To run a single node locally, you need a valid `cluster.conf` (one is provided in the root) and pass the node ID.
+---
 
-```bash
-# Assuming cluster.conf contains: [{"id": 1, "ip": "localhost", "port": 5000}]
-./raft_server start --id 1 --conf cluster.conf
-```
+### Key Modules
 
-### Cluster Management via Makefile
-The included `makefile` automates the deployment, building, and lifecycle management of the cluster using `ssh` and `scp`. It is designed to work with the nodes defined in `cluster.conf`.
+| File | Responsibility |
+|---|---|
+| `raft.go` | `Config`, `New()`, `Raft` struct |
+| `consensus.go` | `Run()`, `doFollower`, `doLeader`, `startElection`, `processReadBatch` |
+| `rpc.go` | `AppendEntries`, `RequestVote`, `Execute`, `Read` RPC handlers & senders |
+| `handle_client.go` | `handleClientRequest` — batches writes to log, reads to quorum path |
+| `statemachine.go` | `StateMachine` interface, `KVStore` implementation, `applyCommand` |
+| `storage.go` | Binary WAL for log entries; binary state file for term/votedFor |
+| `conns.go` | `listenRPC`, `dialRPCToPeer` |
+| `config.go` | `ParseConfig` — reads `cluster.conf` JSON |
 
-**Prerequisites:**
-1.  **SSH Access:** You must have password-less SSH access to all IPs listed in `cluster.conf` (including `localhost`). It is recommended to use `ssh-agent` and `ssh-add` so that the Makefile can execute commands on remote nodes without prompting for passwords.
-2.  **Configuration:**
-    *   **`cluster.conf`**: Define your nodes (ID, IP, Port).
-    *   **`makefile`**: Open the file and update `USER` (default: `tkt`) and `PROJECT_DIR` (default: `~/proj/raft`) to match your environment.
-
-**Core Commands:**
-
-*   **`make deploy`**
-    Distributes the `cluster.conf` file to all nodes listed in the config.
-
-*   **`make send-bin`**
-    Cross-compiles the binary locally (Linux/AMD64) and transfers it to all remote nodes. This is the recommended way to update code.
-
-*   **`make build`**
-    Triggers a `go build` command *on* the remote nodes. Use this if the remote nodes have Go installed and you prefer remote compilation.
-
-*   **`make start`**
-    Starts the Raft server on all nodes in the background. Logs are redirected to `logs/node_<ID>.ans`.
-
-*   **`make kill`**
-    Stops the Raft server processes on all nodes.
-
-*   **`make clean`**
-    Removes binaries and log files from the nodes.
-
-**Benchmarking & Metrics:**
-
-*   **`make benchmark`**
-    Runs a comprehensive benchmark suite measuring throughput and latency across different workloads and batch sizes.
-
-*   **`make get-metrics`**
-    Runs `bench-disk-remote` and `bench-net-remote` to measure the underlying disk and network performance of your cluster environment.
-
-**Example Workflow:**
-
-1.  **Configure:** Edit `cluster.conf` and `makefile` variables.
-2.  **Deploy Config:** `make deploy`
-3.  **Update Code:** `make send-bin`
-4.  **Start Cluster:** `make start`
-5.  **Monitor:** Check logs on nodes (e.g., `tail -f logs/node_1.ans`).
-6.  **Stop:** `make kill`
-
-**Manual Start (Debugging):**
-If you prefer not to use the makefile or SSH, you can run nodes manually in separate terminals:
-
-```bash
-# Terminal 1
-./raft_server start --id 1 --conf cluster.conf
-
-# Terminal 2
-./raft_server start --id 2 --conf cluster.conf
-
-# Terminal 3
-./raft_server start --id 3 --conf cluster.conf
-```
-
-### Minimal Sample Code
-The project is designed as a standalone binary rather than a library, but here is how the `main` function essentially bootstraps a node (based on `init.go`):
+### StateMachine Interface
 
 ```go
-package main
-
-func main() {
-    // 1. Define configuration path and Node ID
-    nodeID := 1
-    confPath := "cluster.conf"
-
-    // 2. Initialize the Raft instance
-    raftNode := NewRaft(nodeID, confPath)
-
-    // 3. Start the main event loop (blocks forever)
-    raftNode.Run()
+type StateMachine interface {
+    Apply(cmd []byte) []byte  // called after a log entry is committed
+    Query(cmd []byte) []byte  // called after quorum confirmation (read path, no log)
 }
 ```
 
-## API / Usage
+Commands prefixed with `GET` are routed to the quorum-read path (`Query`); all others go through the Raft log (`Apply`).
 
-### Entry Point
-The entry point is the CLI command defined in `init.go`, utilizing `urfave/cli`.
-*   Command: `start`
-*   Flags: `--id <int>`, `--conf <string>`
+---
 
-### Application Interface
-*   **No external API:** There is no HTTP or gRPC interface for external clients to submit commands.
-*   **Internal Client:** The "usage" is currently simulated by `client.go`, which runs a goroutine inside the `Raft` process. It generates random `SET`, `GET`, and `DELETE` commands and sends them to the `ClientCh`.
-*   **State Machine Hook:** If you were to modify this for a real application, you would edit `statemachine.go`:
-    ```go
-    // Inside statemachine.go
-    func (r *Raft) applyCommand(command []byte) {
-        // Parse your command here
-        // Update your application state
-    }
-    ```
+## Using as a Library
 
-## Testing
+```go
+import "raft"
 
-### Strategy
-*   **Simulation/Load Testing:** The project relies on the internal `client.go` to generate random traffic (`randomOperation`, `createRandomCommand`). This acts as a continuous integration test when the cluster is running.
-*   **Unit Tests:** There are no standard Go unit tests (`_test.go` files) visible in the top-level directory.
-*   **Scenarios:** The implementation implicitly tests **Leader Election** (via timeouts in `consensus.go`) and **Replication** (via the internal client pushing logs). The `makefile` suggests a workflow for deploying to multiple hosts to test real network distribution.
+// Use the built-in KV store
+node := raft.New(raft.Config{
+    ID:       1,
+    ConfPath: "cluster.conf",
+}, raft.NewKVStore())
+go node.Run()
+```
+
+Custom state machine example:
+
+```go
+type MembershipSM struct{ members map[int]string }
+
+func (m *MembershipSM) Apply(cmd []byte) []byte {
+    // handle ADD_MEMBER / REMOVE_MEMBER
+    return nil
+}
+func (m *MembershipSM) Query(cmd []byte) []byte {
+    // return current member list
+    return nil
+}
+
+node := raft.New(raft.Config{
+    ID:       myID,
+    ConfPath: "raft.conf",
+}, &MembershipSM{members: make(map[int]string)})
+go node.Run()
+```
+
+---
+
+## Building & Running
+
+### Build the binary
+
+```bash
+go build -o raft_server ./cmd
+```
+
+### Run a single node
+
+```bash
+./raft_server start --id 1 --conf cluster.conf
+```
+
+### Available flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `--id` | (required) | Node ID |
+| `--conf` | `cluster.conf` | Path to config file |
+| `--write-batch-size` | `128` | Max log entries batched per fsync |
+| `--read-batch-size` | `128` | Max reads batched per quorum round |
+| `--debug` | `false` | Enable coloured debug logging |
+| `--async-log` | `false` | Skip fsync on each write (faster, less durable) |
+
+---
+
+### Cluster Management via Makefile
+
+The `makefile` automates deployment over SSH.
+
+**Prerequisites:**
+1. Password-less SSH access to all IPs in `cluster.conf`.
+2. Update `USER` and `PROJECT_DIR` at the top of `makefile`.
+
+**Core Commands:**
+
+| Command | Description |
+|---|---|
+| `make deploy` | Distribute `cluster.conf` to all nodes |
+| `make send-bin` | Cross-compile (Linux/AMD64) and push binary to all nodes |
+| `make build` | Build on remote nodes (requires Go installed there) |
+| `make start` | Start Raft server on all nodes (logs → `logs/node_<ID>.ans`) |
+| `make kill` | Stop Raft server processes on all nodes |
+| `make clean` | Remove binaries and logs from nodes |
+| `make benchmark` | Sweep workload × batch sizes × worker counts, output CSV |
+| `make get-metrics` | Measure disk and network latency of cluster nodes |
+
+**Example workflow:**
+
+```bash
+make deploy       # push cluster.conf
+make send-bin     # push binary
+make start        # start all nodes
+make benchmark TYPE=ycsb-a WORKERS="1 4 16" READ_BATCH="1 32" WRITE_BATCH="1 32"
+make kill
+```
+
+**Manual start (debugging):**
+
+```bash
+./raft_server start --id 1 --conf cluster.conf  # terminal 1
+./raft_server start --id 2 --conf cluster.conf  # terminal 2
+./raft_server start --id 3 --conf cluster.conf  # terminal 3
+```
+
+---
 
 ## Limitations
 
-
-1.  **Fixed Configuration:** Cluster membership is static, defined in `cluster.conf` at startup. Dynamic membership changes are not supported.
-2.  **No Snapshotting:** The log will grow indefinitely. There is no mechanism to compact the log or create snapshots.
-3.  **Internal-Only Client:** External applications cannot interact with the cluster. The `client` logic is hardcoded within the server binary.
-4.  **Basic Error Handling:** Network errors are logged, but complex recovery scenarios or backoff strategies might be minimal.
-5.  **TODOs (Inferred):**
-    *   Add an external API (HTTP/gRPC) for client interaction.
-    *   Implement log compaction/snapshots.
-    *   Add formal unit tests.
+1. **Static membership** — cluster size is fixed at startup via `cluster.conf`.
+2. **No log compaction** — the log grows indefinitely; no snapshotting.
+3. **KV read routing is prefix-based** — commands starting with `GET` go through the quorum-read path; custom state machines that need `Query` must follow the same convention.
+4. **No external API** — interaction is via Go RPC (`net/rpc`) only.
