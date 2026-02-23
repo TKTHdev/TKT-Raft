@@ -45,16 +45,15 @@ type Raft struct {
 	peerIPPort       map[int]string
 	storage          *Storage
 	commitCond       *sync.Cond
-	replicating      map[int]bool
-	newLogEntryCh    chan bool
-	writeBatchSize   int
-	readBatchSize    int
-	workers          int
-	debug            bool
-	workload         int
+	replicating    map[int]bool
+	newLogEntryCh  chan bool
+	writeBatchSize int
+	readBatchSize  int
+	debug          bool
+	leaderID       int
 }
 
-func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, workers int, debug bool, workload int, asyncLog bool) *Raft {
+func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, debug bool, asyncLog bool) *Raft {
 	peerIPPort := parseConfig(confPath)
 	storage, err := NewStorage(id, asyncLog)
 	if err != nil {
@@ -95,11 +94,10 @@ func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, wor
 		storage:          storage,
 		replicating:      make(map[int]bool),
 		newLogEntryCh:    make(chan bool, 1),
-		writeBatchSize:   writeBatchSize,
-		readBatchSize:    readBatchSize,
-		workers:          workers,
-		debug:            debug,
-		workload:         workload,
+		writeBatchSize: writeBatchSize,
+		readBatchSize:  readBatchSize,
+		debug:          debug,
+		leaderID:       -1,
 	}
 	r.commitCond = sync.NewCond(&r.mu)
 	for peerID, _ := range peerIPPort {
@@ -108,8 +106,6 @@ func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, wor
 	}
 
 	go r.listenRPC(peerIPPort)
-	//go r.internalClient()
-	go r.concClient()
 	go r.handleClientRequest()
 	go r.runApplier()
 	return r

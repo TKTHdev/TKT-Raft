@@ -3,24 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/sourcegraph/conc/pool"
 	"math/rand"
+	"net/rpc"
+	"sort"
+	"sync"
 	"time"
 )
 
 const (
+	EXPERIMENT_DURATION = 10 * time.Second
 	VALUE_MAX           = 1500
-	CLIENT_START        = 4000 * time.Millisecond
-	EXPERIMENT_DURATION = 10000 * time.Millisecond
-	YCSB_A              = 50
-	YCSB_B              = 5
-	YCSB_C              = 0
 )
-
-type Response struct {
-	success bool
-	value   string
-}
 
 type WorkerResult struct {
 	count    int
@@ -28,148 +21,192 @@ type WorkerResult struct {
 }
 
 type Client struct {
-	sendCh        chan []byte
-	internalState map[string]string
+	peers    map[int]string
+	peerIDs  []int
+	conns    map[int]*rpc.Client
+	mu       sync.Mutex
+	leaderID int
+	workers  int
+	numKeys  int
+	workload int
+	debug    bool
 }
 
-func (c *Client) randomKey() string {
-	keys := []string{"x", "y", "z", "a", "b", "c"}
-	return keys[rand.Intn(len(keys))]
-}
+func NewClient(confPath string, workers, numKeys, workload int, debug bool) *Client {
+	peers := parseConfig(confPath)
+	ids := make([]int, 0, len(peers))
+	for id := range peers {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
 
-func (c *Client) randomValue() string {
-	return fmt.Sprintf("value%d", rand.Intn(VALUE_MAX))
-}
-
-func (c *Client) createYCSBCommand(writeRatio int) []byte {
-	opRand := rand.Intn(100)
-	if opRand < writeRatio {
-		key := c.randomKey()
-		value := c.randomValue()
-		commandString := fmt.Sprintf("SET %s %s", key, value)
-		return []byte(commandString)
-	} else {
-		key := c.randomKey()
-		commandString := fmt.Sprintf("GET %s", key)
-		return []byte(commandString)
+	return &Client{
+		peers:    peers,
+		peerIDs:  ids,
+		conns:    make(map[int]*rpc.Client),
+		leaderID: -1,
+		workers:  workers,
+		numKeys:  numKeys,
+		workload: workload,
+		debug:    debug,
 	}
 }
 
-func (c *Client) validateResponse(command []byte, resp Response) bool {
-	cmdStr := string(command)
-	var key, value string
-
-	if len(cmdStr) >= 3 && cmdStr[:3] == "SET" {
-		fmt.Sscanf(cmdStr, "SET %s %s", &key, &value)
-		storedValue, exists := c.internalState[key]
-		return exists && storedValue == value && resp.success
-	} else if len(cmdStr) >= 3 && cmdStr[:3] == "GET" {
-		fmt.Sscanf(cmdStr, "GET %s", &key)
-		storedValue, exists := c.internalState[key]
-		if exists {
-			return resp.success && resp.value == storedValue
-		} else {
-			return !resp.success
+func (c *Client) getConn(id int) *rpc.Client {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conns[id] == nil {
+		conn, err := rpc.Dial("tcp", c.peers[id])
+		if err != nil {
+			return nil
 		}
-	} else if len(cmdStr) >= 6 && cmdStr[:6] == "DELETE" {
-		fmt.Sscanf(cmdStr, "DELETE %s", &key)
-		_, exists := c.internalState[key]
-		return !exists && resp.success
+		c.conns[id] = conn
 	}
-	return false
+	return c.conns[id]
 }
 
-func (r *Raft) concClient() {
-	for r.state != LEADER {
+func (c *Client) invalidateConn(id int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conns[id] != nil {
+		c.conns[id].Close()
+		c.conns[id] = nil
 	}
-	fmt.Println("ConcClient starting experiment...")
+	if c.leaderID == id {
+		c.leaderID = -1
+	}
+}
 
+func (c *Client) execute(command []byte) (string, bool) {
+	c.mu.Lock()
+	startID := c.leaderID
+	c.mu.Unlock()
+
+	// Build try list: cached leader first, then others
+	tryList := make([]int, 0, len(c.peerIDs))
+	if startID != -1 {
+		tryList = append(tryList, startID)
+	}
+	for _, id := range c.peerIDs {
+		if id != startID {
+			tryList = append(tryList, id)
+		}
+	}
+
+	tried := make(map[int]bool)
+	for len(tryList) > 0 {
+		id := tryList[0]
+		tryList = tryList[1:]
+		if tried[id] {
+			continue
+		}
+		tried[id] = true
+
+		conn := c.getConn(id)
+		if conn == nil {
+			continue
+		}
+		args := &ExecuteArgs{Command: command}
+		reply := &ExecuteReply{}
+		if err := conn.Call(Execute, args, reply); err != nil {
+			c.invalidateConn(id)
+			continue
+		}
+		if reply.IsLeader {
+			c.mu.Lock()
+			c.leaderID = id
+			c.mu.Unlock()
+			return reply.Value, reply.Success
+		}
+		// Use leader hint: prepend hinted node to front of remaining list
+		if reply.LeaderID != -1 && !tried[reply.LeaderID] {
+			c.mu.Lock()
+			c.leaderID = reply.LeaderID
+			c.mu.Unlock()
+			tryList = append([]int{reply.LeaderID}, tryList...)
+		}
+	}
+	return "", false
+}
+
+func (c *Client) Run() {
+	workloadName := map[int]string{50: "ycsb-a", 5: "ycsb-b", 0: "ycsb-c"}[c.workload]
+	fmt.Printf("[Client] Peers: %v\n", c.peers)
+	fmt.Printf("[Client] Workload: %s, Workers: %d, Keys: %d\n", workloadName, c.workers, c.numKeys)
+
+	time.Sleep(2 * time.Second)
+	c.runBenchmark()
+}
+
+func (c *Client) runBenchmark() {
 	ctx, cancel := context.WithTimeout(context.Background(), EXPERIMENT_DURATION)
 	defer cancel()
 
-	p := pool.NewWithResults[WorkerResult]().WithErrors().WithMaxGoroutines(r.workers)
-	for i := 0; i < r.workers; i++ {
-		p.Go(func() (WorkerResult, error) { return concClientWorker(ctx, r) })
+	resultCh := make(chan WorkerResult, c.workers)
+	var wg sync.WaitGroup
+	for i := 0; i < c.workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			resultCh <- c.worker(ctx)
+		}()
 	}
-	results, err := p.Wait()
-	//cal throughput
-	if err != nil {
-		fmt.Println("ConcClient encountered error:", err)
-		return
-	}
-	totalCommands := 0
+	wg.Wait()
+	close(resultCh)
+
+	var totalCount int
 	var totalDuration time.Duration
-	for _, res := range results {
-		totalCommands += res.count
+	for res := range resultCh {
+		totalCount += res.count
 		totalDuration += res.duration
 	}
-	throughput := float64(totalCommands) / EXPERIMENT_DURATION.Seconds()
+
+	throughput := float64(totalCount) / EXPERIMENT_DURATION.Seconds()
 	avgLatency := float64(0)
-	if totalCommands > 0 {
-		avgLatency = float64(totalDuration.Milliseconds()) / float64(totalCommands)
+	if totalCount > 0 {
+		avgLatency = float64(totalDuration.Milliseconds()) / float64(totalCount)
 	}
 
-	fmt.Printf("ConcClient total commands processed: %d\n", totalCommands)
-	fmt.Printf("ConcClient throughput: %.2f commands/second\n", throughput)
-	fmt.Printf("ConcClient average latency: %.2f ms\n", avgLatency)
-
-	// CSV output for makefile to capture
-	workloadName := "unknown"
-	switch r.workload {
-	case 50:
-		workloadName = "ycsb-a"
-	case 5:
-		workloadName = "ycsb-b"
-	case 0:
-		workloadName = "ycsb-c"
-	}
-	fmt.Printf("RESULT:%s,%d,%d,%d,%.2f,%.2f\n", workloadName, r.readBatchSize, r.writeBatchSize, r.workers, throughput, avgLatency)
+	workloadName := map[int]string{50: "ycsb-a", 5: "ycsb-b", 0: "ycsb-c"}[c.workload]
+	fmt.Printf("Benchmark completed\n")
+	fmt.Printf("Total ops: %d\n", totalCount)
+	fmt.Printf("Throughput: %.2f ops/sec\n", throughput)
+	fmt.Printf("Avg latency: %.2f ms\n", avgLatency)
+	fmt.Printf("RESULT:%s,%d,%d,%.2f,%.2f\n", workloadName, c.workers, c.numKeys, throughput, avgLatency)
 }
 
-func concClientWorker(ctx context.Context, r *Raft) (WorkerResult, error) {
-	client := &Client{
-		internalState: make(map[string]string),
-	}
+func (c *Client) worker(ctx context.Context) WorkerResult {
 	res := WorkerResult{}
 	for {
 		select {
 		case <-ctx.Done():
-			return res, nil
+			return res
 		default:
 		}
 
-		if r.state == LEADER {
-			command := client.createYCSBCommand(r.workload)
-			req := ClientRequest{
-				Command: command,
-				RespCh:  make(chan Response, 1),
-			}
+		key := fmt.Sprintf("k%d", rand.Intn(c.numKeys))
+		start := time.Now()
+		var ok bool
 
-			start := time.Now()
-			select {
-			case <-ctx.Done():
-				return res, nil
-			case r.ReqCh <- req:
-			}
-
-			select {
-			case <-ctx.Done():
-				return res, nil
-			case resp := <-req.RespCh:
-				if resp.success {
-					res.count += 1
-					res.duration += time.Since(start)
-				} else {
-					fmt.Println("ConcClient command failed:", string(command))
-					return res, fmt.Errorf("command failed")
-				}
-			}
+		if rand.Intn(100) < c.workload {
+			value := randomValue(VALUE_MAX)
+			_, ok = c.execute([]byte(fmt.Sprintf("SET %s %s", key, value)))
 		} else {
-			select {
-			case <-ctx.Done():
-				return res, nil
-			case <-time.After(10 * time.Millisecond):
-			}
+			_, ok = c.execute([]byte(fmt.Sprintf("GET %s", key)))
+		}
+
+		if ok {
+			res.count++
+			res.duration += time.Since(start)
 		}
 	}
+}
+
+func randomValue(size int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, size)
+	for i := range b {
+		b[i] = charset[rand.Intn(len(charset))]
+	}
+	return string(b)
 }
