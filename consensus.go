@@ -190,10 +190,10 @@ func (r *Raft) startElection() {
 	r.persistState()
 	termBeforeRPC := r.currentTerm
 	var cnt int32 = 1 //vote for self already
-	ids := make([]int, 0, r.clusterSize)
-	for i := 1; i <= 3; i++ {
-		if i != r.me {
-			ids = append(ids, i)
+	ids := make([]int, 0, len(r.peerIPPort))
+	for peerID := range r.peerIPPort {
+		if peerID != r.me {
+			ids = append(ids, peerID)
 		}
 	}
 	for _, id := range ids {
