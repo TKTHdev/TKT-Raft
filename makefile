@@ -125,7 +125,7 @@ clean:
 #   outer loops (type, rbatch, wbatch) → restart servers
 #   inner loop  (workers)              → restart client only
 # -----------------------------------------------------------------------
-benchmark:
+benchmark: send-bin
 	@mkdir -p results
 	@CLIENT_IP=$$(jq -r --arg i "$(CLIENT_NODE)" '.[] | select(.id == ($$i | tonumber)) | .ip' $(CONFIG_FILE)); \
 	CLIENT_BIN="$(BINARY_NAME)_$(CLIENT_NODE)"; \

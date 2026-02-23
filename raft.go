@@ -50,6 +50,7 @@ type Raft struct {
 	writeBatchSize int
 	readBatchSize  int
 	debug          bool
+	leaderID       int
 }
 
 func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, debug bool, asyncLog bool) *Raft {
@@ -96,6 +97,7 @@ func NewRaft(id int, confPath string, writeBatchSize int, readBatchSize int, deb
 		writeBatchSize: writeBatchSize,
 		readBatchSize:  readBatchSize,
 		debug:          debug,
+		leaderID:       -1,
 	}
 	r.commitCond = sync.NewCond(&r.mu)
 	for peerID, _ := range peerIPPort {

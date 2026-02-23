@@ -79,21 +79,29 @@ func (c *Client) invalidateConn(id int) {
 
 func (c *Client) execute(command []byte) (string, bool) {
 	c.mu.Lock()
-	leader := c.leaderID
+	startID := c.leaderID
 	c.mu.Unlock()
 
-	// Try cached leader first, then all others
+	// Build try list: cached leader first, then others
 	tryList := make([]int, 0, len(c.peerIDs))
-	if leader != -1 {
-		tryList = append(tryList, leader)
+	if startID != -1 {
+		tryList = append(tryList, startID)
 	}
 	for _, id := range c.peerIDs {
-		if id != leader {
+		if id != startID {
 			tryList = append(tryList, id)
 		}
 	}
 
-	for _, id := range tryList {
+	tried := make(map[int]bool)
+	for len(tryList) > 0 {
+		id := tryList[0]
+		tryList = tryList[1:]
+		if tried[id] {
+			continue
+		}
+		tried[id] = true
+
 		conn := c.getConn(id)
 		if conn == nil {
 			continue
@@ -104,13 +112,19 @@ func (c *Client) execute(command []byte) (string, bool) {
 			c.invalidateConn(id)
 			continue
 		}
-		if !reply.IsLeader {
-			continue
+		if reply.IsLeader {
+			c.mu.Lock()
+			c.leaderID = id
+			c.mu.Unlock()
+			return reply.Value, reply.Success
 		}
-		c.mu.Lock()
-		c.leaderID = id
-		c.mu.Unlock()
-		return reply.Value, reply.Success
+		// Use leader hint: prepend hinted node to front of remaining list
+		if reply.LeaderID != -1 && !tried[reply.LeaderID] {
+			c.mu.Lock()
+			c.leaderID = reply.LeaderID
+			c.mu.Unlock()
+			tryList = append([]int{reply.LeaderID}, tryList...)
+		}
 	}
 	return "", false
 }
