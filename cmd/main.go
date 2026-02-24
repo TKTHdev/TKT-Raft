@@ -23,6 +23,7 @@ func main() {
 					readBatchSize := c.Int("read-batch-size")
 					debug := c.Bool("debug")
 					asyncLog := c.Bool("async-log")
+					storageType := c.String("storage")
 					r := raft.New(raft.Config{
 						ID:             id,
 						ConfPath:       conf,
@@ -30,6 +31,7 @@ func main() {
 						ReadBatchSize:  readBatchSize,
 						Debug:          debug,
 						AsyncLog:       asyncLog,
+						StorageType:    storageType,
 					}, raft.NewKVStore())
 					r.Run()
 					return nil
@@ -64,6 +66,11 @@ func main() {
 						Name:  "async-log",
 						Usage: "Enable asynchronous disk writes",
 						Value: false,
+					},
+					&cli.StringFlag{
+						Name:  "storage",
+						Usage: "Storage backend: \"file\", \"bitcask\", or \"iouring\"",
+						Value: "file",
 					},
 				},
 			},

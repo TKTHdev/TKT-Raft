@@ -8,7 +8,28 @@ import (
 	"os"
 )
 
-type Storage struct {
+type StorageBackend interface {
+	SaveState(term int, votedFor int) error
+	LoadState() (int, int, error)
+	AppendEntry(entry LogEntry) error
+	AppendEntries(entries []LogEntry) error
+	TruncateLog(index int) error
+	LoadLog() ([]LogEntry, error)
+	Close() error
+}
+
+func NewStorageBackend(id int, async bool, storageType string) (StorageBackend, error) {
+	switch storageType {
+	case "bitcask":
+		return NewBitcaskStorage(id, async)
+	case "iouring":
+		return NewIoUringStorage(id, async)
+	default:
+		return NewFileStorage(id, async)
+	}
+}
+
+type FileStorage struct {
 	id         int
 	stateFile  *os.File
 	logFile    *os.File
@@ -17,7 +38,7 @@ type Storage struct {
 	async      bool
 }
 
-func NewStorage(id int, async bool) (*Storage, error) {
+func NewFileStorage(id int, async bool) (*FileStorage, error) {
 	stateFilename := fmt.Sprintf("raft_state_%d.bin", id)
 	logFilename := fmt.Sprintf("raft_log_%d.bin", id)
 
@@ -32,7 +53,7 @@ func NewStorage(id int, async bool) (*Storage, error) {
 		return nil, err
 	}
 
-	return &Storage{
+	return &FileStorage{
 		id:         id,
 		stateFile:  sFile,
 		logFile:    lFile,
@@ -42,7 +63,7 @@ func NewStorage(id int, async bool) (*Storage, error) {
 	}, nil
 }
 
-func (s *Storage) SaveState(term int, votedFor int) error {
+func (s *FileStorage) SaveState(term int, votedFor int) error {
 	if _, err := s.stateFile.Seek(0, 0); err != nil {
 		return err
 	}
@@ -61,7 +82,7 @@ func (s *Storage) SaveState(term int, votedFor int) error {
 	return nil
 }
 
-func (s *Storage) LoadState() (int, int, error) {
+func (s *FileStorage) LoadState() (int, int, error) {
 	info, err := s.stateFile.Stat()
 	if err != nil {
 		return 0, -2, err
@@ -85,7 +106,7 @@ func (s *Storage) LoadState() (int, int, error) {
 	return term, votedFor, nil
 }
 
-func (s *Storage) AppendEntry(entry LogEntry) error {
+func (s *FileStorage) AppendEntry(entry LogEntry) error {
 	offset, err := s.logFile.Seek(0, io.SeekEnd)
 	if err != nil {
 		return err
@@ -113,7 +134,7 @@ func (s *Storage) AppendEntry(entry LogEntry) error {
 	return nil
 }
 
-func (s *Storage) AppendEntries(entries []LogEntry) error {
+func (s *FileStorage) AppendEntries(entries []LogEntry) error {
 	if err := s.logWriter.Flush(); err != nil {
 		return err
 	}
@@ -142,14 +163,13 @@ func (s *Storage) AppendEntries(entries []LogEntry) error {
 	if err := s.logWriter.Flush(); err != nil {
 		return err
 	}
-	//return nil
 	if !s.async {
 		return s.logFile.Sync()
 	}
 	return nil
 }
 
-func (s *Storage) TruncateLog(index int) error {
+func (s *FileStorage) TruncateLog(index int) error {
 	if index < 0 {
 		return nil
 	}
@@ -181,7 +201,7 @@ func (s *Storage) TruncateLog(index int) error {
 	return nil
 }
 
-func (s *Storage) LoadLog() ([]LogEntry, error) {
+func (s *FileStorage) LoadLog() ([]LogEntry, error) {
 	if _, err := s.logFile.Seek(0, 0); err != nil {
 		return nil, err
 	}
@@ -228,7 +248,7 @@ func (s *Storage) LoadLog() ([]LogEntry, error) {
 	return logs, nil
 }
 
-func (s *Storage) Close() error {
+func (s *FileStorage) Close() error {
 	s.logWriter.Flush()
 	s.stateFile.Close()
 	return s.logFile.Close()
