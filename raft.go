@@ -19,6 +19,7 @@ type Config struct {
 	ReadBatchSize  int // default: 128
 	Debug          bool
 	AsyncLog       bool
+	StorageType    string // "file" (default) or "bitcask"
 }
 
 type LogEntry struct {
@@ -50,7 +51,7 @@ type Raft struct {
 	pendingResponses map[int]chan Response
 	mu               sync.RWMutex
 	peerIPPort       map[int]string
-	storage          *Storage
+	storage          StorageBackend
 	commitCond       *sync.Cond
 	replicating      map[int]bool
 	newLogEntryCh    chan bool
@@ -71,7 +72,7 @@ func New(cfg Config, sm StateMachine) *Raft {
 	}
 
 	peerIPPort := ParseConfig(cfg.ConfPath)
-	storage, err := NewStorage(cfg.ID, cfg.AsyncLog)
+	storage, err := NewStorageBackend(cfg.ID, cfg.AsyncLog, cfg.StorageType)
 	if err != nil {
 		panic(err)
 	}
